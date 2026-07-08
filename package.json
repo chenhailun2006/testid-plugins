@@ -1,6 +1,6 @@
 {
   "name": "testid-plugins",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "private": true,
   "description": "全自动 DOM 打标 data-testid 工具 — Vue 3 + Vite + Ant Design Vue",
   "scripts": {

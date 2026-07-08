@@ -1,6 +1,6 @@
 {
   "name": "@chenhailun2006/vite-plugin-auto-testid",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Vite 编译期插件 — Vue SFC 模板 AST 解析，自动注入 data-testid / data-test-base-key",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
