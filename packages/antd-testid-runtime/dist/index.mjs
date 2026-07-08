@@ -145,7 +145,12 @@ var POPUP_CLASS_SUFFIX_MAP = {
   modal: ["-modal"],
   drawer: ["-drawer"],
   select: ["-select-dropdown"],
-  datePicker: ["-picker-dropdown"],
+  datePicker: [
+    "-picker-dropdown",
+    // Ant Design Vue 4.x (新)
+    "-calendar-picker-container"
+    // Ant Design Vue 1.x (旧)
+  ],
   popconfirm: ["-popover", "-popconfirm"],
   dropdown: ["-dropdown"],
   tooltip: ["-tooltip"]

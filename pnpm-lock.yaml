@@ -17,7 +17,7 @@ importers:
 
   examples/vue3-antd-demo:
     dependencies:
-      '@testid/antd-testid-runtime':
+      '@chenhailun2006/antd-testid-runtime':
         specifier: workspace:*
         version: link:../../packages/antd-testid-runtime
       ant-design-vue:
@@ -30,7 +30,7 @@ importers:
         specifier: ^4.3.0
         version: 4.6.4(vue@3.5.39(typescript@5.9.3))
     devDependencies:
-      '@testid/vite-plugin-auto-testid':
+      '@chenhailun2006/vite-plugin-auto-testid':
         specifier: workspace:*
         version: link:../../packages/vite-plugin-auto-testid
       '@vitejs/plugin-vue':

@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import vitePluginAutoTestId from '@testid/vite-plugin-auto-testid';
+import vitePluginAutoTestId from '@chenhailun2006/vite-plugin-auto-testid';
 
 export default defineConfig({
   plugins: [
