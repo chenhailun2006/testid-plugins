@@ -9,13 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@chenhailun2006/antd-testid-runtime": "workspace:*",
+    "@testid/antd-testid-runtime": "workspace:*",
     "ant-design-vue": "^4.2.0",
     "vue": "^3.4.0",
     "vue-router": "^4.3.0"
   },
   "devDependencies": {
-    "@chenhailun2006/vite-plugin-auto-testid": "workspace:*",
+    "@testid/vite-plugin-auto-testid": "workspace:*",
     "@vitejs/plugin-vue": "^5.0.0",
     "playwright": "^1.61.1",
     "typescript": "^5.3.0",

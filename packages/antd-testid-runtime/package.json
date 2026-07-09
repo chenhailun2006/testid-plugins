@@ -1,6 +1,6 @@
 {
-  "name": "@chenhailun2006/antd-testid-runtime",
-  "version": "1.0.6",
+  "name": "@testid/antd-testid-runtime",
+  "version": "1.0.8",
   "description": "运行时兜底打标模块 — MutationObserver + 锚点计数器 + 浮层计数器 + ID 重复检测",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -17,11 +17,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/chenhailun2006/testid-plugins.git",
+    "url": "https://github.com/testid/testid-plugins.git",
     "directory": "packages/antd-testid-runtime"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
     "build": "tsup src/index.ts --dts --format esm,cjs --clean",

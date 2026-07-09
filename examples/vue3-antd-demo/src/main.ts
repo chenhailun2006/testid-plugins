@@ -17,7 +17,7 @@ import {
   resetAllAnchorCounters,
   resetAllPopupCounters,
   TestIdChecker,
-} from '@chenhailun2006/antd-testid-runtime';
+} from '@testid/antd-testid-runtime';
 
 // ── 初始化配置 (仅 DEV 生效) ──
 if (import.meta.env.DEV) {

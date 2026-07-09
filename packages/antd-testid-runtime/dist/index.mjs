@@ -26,7 +26,8 @@ var defaultConfig = {
     datePicker: "datePicker_",
     popconfirm: "popconfirm_",
     dropdown: "dropdown_",
-    tooltip: "tooltip_"
+    tooltip: "tooltip_",
+    message: "message_"
   },
   ignoreTags: ["script", "style", "svg", "br", "iframe"],
   ignoreClass: ["no-test-mark", "hidden"],
@@ -113,7 +114,8 @@ var popupCounters = {
   datePicker: 0,
   popconfirm: 0,
   dropdown: 0,
-  tooltip: 0
+  tooltip: 0,
+  message: 0
 };
 function getNextPopupId(type) {
   const key = type in popupCounters ? type : "modal";
@@ -142,26 +144,31 @@ function buildPopupTestId(type, tag, counterId) {
 
 // src/utils/testIdObserver.ts
 var POPUP_CLASS_SUFFIX_MAP = {
-  modal: ["-modal"],
-  drawer: ["-drawer"],
-  select: ["-select-dropdown"],
+  modal: [["-modal"]],
+  drawer: [["-drawer"]],
+  select: [["-select-dropdown"]],
   datePicker: [
-    "-picker-dropdown",
+    ["-picker-dropdown"],
     // Ant Design Vue 4.x (新)
-    "-calendar-picker-container"
+    ["-calendar-picker-container"]
     // Ant Design Vue 1.x (旧)
   ],
-  popconfirm: ["-popover", "-popconfirm"],
-  dropdown: ["-dropdown"],
-  tooltip: ["-tooltip"]
+  popconfirm: [["-popover", "-popconfirm"]],
+  dropdown: [["-dropdown"]],
+  tooltip: [["-tooltip"]],
+  message: [["-message"]]
 };
 function buildPopupClassMap(prefixes) {
   const result = {};
   const entries = Object.entries(POPUP_CLASS_SUFFIX_MAP);
-  for (const [type, suffixClasses] of entries) {
-    result[type] = prefixes.map(
-      (prefix) => suffixClasses.map((suffix) => `${prefix}${suffix}`)
-    );
+  for (const [type, suffixGroups] of entries) {
+    const selectorSets = [];
+    for (const suffixGroup of suffixGroups) {
+      for (const prefix of prefixes) {
+        selectorSets.push(suffixGroup.map((suffix) => `${prefix}${suffix}`));
+      }
+    }
+    result[type] = selectorSets;
   }
   return result;
 }
@@ -288,9 +295,9 @@ var TestIdObserver = class {
       this.handlePopupNode(node, popupType);
       return;
     }
-    const popupAncestorType = this.detectPopupAncestor(node);
-    if (popupAncestorType) {
-      this.handlePopupChildNode(node, popupAncestorType, config);
+    const popupAncestor = this.detectPopupAncestor(node);
+    if (popupAncestor) {
+      this.handlePopupChildNode(node, popupAncestor.type, popupAncestor.element, config);
       return;
     }
     if (this.isInsideApp(node)) {
@@ -385,7 +392,7 @@ var TestIdObserver = class {
    * 因为 Ant Design Vue 4 可能在浮层根节点外包一层 wrapper DIV)。
    * 找到浮层根节点后，继续向上验证其祖先链能到达 body (确保不在 #app 内)。
    *
-   * @returns 浮层类型或 null (不在任何浮层内)
+   * @returns 浮层类型 + 祖先元素，或 null (不在任何浮层内)
    */
   detectPopupAncestor(node) {
     let current = node.parentElement;
@@ -393,7 +400,7 @@ var TestIdObserver = class {
       const type = this.matchPopupClass(current);
       if (type) {
         const reachesBody = this.reachesBody(current);
-        if (reachesBody) return type;
+        if (reachesBody) return { type, element: current };
       }
       if (current === document.body || current.id === "app") break;
       current = current.parentElement;
@@ -452,15 +459,19 @@ var TestIdObserver = class {
   /**
    * 处理浮层内部子节点 (Modal/Drawer/Dropdown 内的按钮、输入框等)
    *
+   * 每个浮层实例独立计数: 以浮层根节点 data-testid 作为隔离 key，
+   * 重复打开相同类型的浮层，子元素 ID 均从 0 重新开始。
+   *
    * ID 格式: ${runtimePagePrefix}${popupPrefix}${tag}_${counter}
    * 例: hall_dynamic_modal_button_0, hall_dynamic_select_div_2
    *
    * 浮层子元素均为运行时注入，统一使用 runtimePagePrefix 前缀。
    */
-  handlePopupChildNode(node, popupType, config) {
+  handlePopupChildNode(node, popupType, popupElement, config) {
     if (config.onlyInteractive && !this.isInteractive(node)) return;
     const tag = this.getSimpleTag(node);
-    const key = `${popupType}_${tag}`;
+    const popupRootTestId = popupElement.getAttribute("data-testid") || `${popupType}_unknown`;
+    const key = `${popupRootTestId}_${tag}`;
     const current = this.state.popupChildCounter.get(key) ?? 0;
     this.state.popupChildCounter.set(key, current + 1);
     const popupPrefix = config.popupPrefixMap[popupType] || `${popupType}_`;
@@ -544,7 +555,8 @@ var GROUP_LABELS = {
   datePicker: "[DatePicker \u6D6E\u5C42]",
   popconfirm: "[Popconfirm \u6D6E\u5C42]",
   dropdown: "[Dropdown \u6D6E\u5C42]",
-  tooltip: "[Tooltip \u6D6E\u5C42]"
+  tooltip: "[Tooltip \u6D6E\u5C42]",
+  message: "[Message \u6D6E\u5C42]"
 };
 var GROUP_SUGGESTIONS = {
   custom: "\u4E1A\u52A1\u4EE3\u7801\u4E2D\u5B58\u5728\u624B\u5199\u56FA\u5B9A\u91CD\u590D data-testid\uFF0C\u8BF7\u68C0\u67E5\u76F8\u5173\u6A21\u677F\u4EE3\u7801",
@@ -556,7 +568,8 @@ var GROUP_SUGGESTIONS = {
   datePicker: "DatePicker \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
   popconfirm: "Popconfirm \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
   dropdown: "Dropdown \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
-  tooltip: "Tooltip \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548"
+  tooltip: "Tooltip \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
+  message: "Message \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548"
 };
 var TestIdChecker = class {
   /**
@@ -653,7 +666,8 @@ var TestIdChecker = class {
       "datePicker",
       "popconfirm",
       "dropdown",
-      "tooltip"
+      "tooltip",
+      "message"
     ];
     for (const type of popupTypes) {
       if (prefix === `${type}_`) return type;

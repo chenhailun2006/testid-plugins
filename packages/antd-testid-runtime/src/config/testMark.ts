@@ -22,7 +22,8 @@ export type PopupType =
   | 'datePicker'
   | 'popconfirm'
   | 'dropdown'
-  | 'tooltip';
+  | 'tooltip'
+  | 'message';
 
 /**
  * 全量配置接口
@@ -113,6 +114,7 @@ export const defaultConfig: TestIdMarkConfig = {
     popconfirm: 'popconfirm_',
     dropdown: 'dropdown_',
     tooltip: 'tooltip_',
+    message: 'message_',
   },
   ignoreTags: ['script', 'style', 'svg', 'br', 'iframe'],
   ignoreClass: ['no-test-mark', 'hidden'],

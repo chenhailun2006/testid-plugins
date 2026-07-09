@@ -1,6 +1,6 @@
 {
-  "name": "@chenhailun2006/vite-plugin-auto-testid",
-  "version": "1.0.6",
+  "name": "@testid/vite-plugin-auto-testid",
+  "version": "1.0.8",
   "description": "Vite 编译期插件 — Vue SFC 模板 AST 解析，自动注入 data-testid / data-test-base-key",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -17,11 +17,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/chenhailun2006/testid-plugins.git",
+    "url": "https://github.com/testid/testid-plugins.git",
     "directory": "packages/vite-plugin-auto-testid"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
     "build": "tsup src/index.ts --dts --format esm,cjs --clean",

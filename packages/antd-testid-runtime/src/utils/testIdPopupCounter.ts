@@ -28,6 +28,7 @@ const popupCounters: Record<PopupType, number> = {
   popconfirm: 0,
   dropdown: 0,
   tooltip: 0,
+  message: 0,
 };
 
 /**

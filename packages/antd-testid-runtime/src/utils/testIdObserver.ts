@@ -53,37 +53,49 @@ interface ObserverState {
 /**
  * 浮层组件的 CSS class 后缀模板 (不含前缀)
  *
- * 每条记录是一组 class 名称 (不含前缀)，配合 antdClassPrefix 动态构建。
- * 多 class 组合表示同时匹配多个 class (如 popconfirm 需同时有 popover + popconfirm)
+ * 结构: PopupType → string[][]，两层数组含义:
+ *   - 外层数组: OR 关系，任一内层数组命中即匹配该浮层类型
+ *   - 内层数组: AND 关系，所有 class 必须同时出现在元素上
  *
- * 例: antdClassPrefix = ['ant', 'custom']
- *   → modal: [['ant-modal'], ['custom-modal']]
- *   → popconfirm: [['ant-popover', 'ant-popconfirm'], ['custom-popover', 'custom-popconfirm']]
+ * 例: popconfirm → [['-popover', '-popconfirm']] 要求元素同时有 ant-popover 和 ant-popconfirm
+ *     datePicker → [['-picker-dropdown'], ['-calendar-picker-container']] 新/旧版本任一命中即可
+ *
+ * 配合 antdClassPrefix 动态构建:
+ *   例: antdClassPrefix = ['ant', 'custom']
+ *     → modal: [['ant-modal'], ['custom-modal']]
+ *     → popconfirm: [['ant-popover', 'ant-popconfirm'], ['custom-popover', 'custom-popconfirm']]
  */
-const POPUP_CLASS_SUFFIX_MAP: Record<PopupType, string[]> = {
-  modal:      ['-modal'],
-  drawer:     ['-drawer'],
-  select:     ['-select-dropdown'],
+const POPUP_CLASS_SUFFIX_MAP: Record<PopupType, string[][]> = {
+  modal:      [['-modal']],
+  drawer:     [['-drawer']],
+  select:     [['-select-dropdown']],
   datePicker: [
-    '-picker-dropdown',            // Ant Design Vue 4.x (新)
-    '-calendar-picker-container',  // Ant Design Vue 1.x (旧)
+    ['-picker-dropdown'],            // Ant Design Vue 4.x (新)
+    ['-calendar-picker-container'],  // Ant Design Vue 1.x (旧)
   ],
-  popconfirm: ['-popover', '-popconfirm'],
-  dropdown:   ['-dropdown'],
-  tooltip:    ['-tooltip'],
+  popconfirm: [['-popover', '-popconfirm']],
+  dropdown:   [['-dropdown']],
+  tooltip:    [['-tooltip']],
+  message:    [['-message']],
 };
 
 /**
  * 根据 antdClassPrefix[] 构建浮层 class 匹配表
- * 每种浮层类型 × 每个前缀 = 多组 class 组合
+ *
+ * 外层: OR 遍历每个 suffixGroup
+ * 内层: 每个 prefix × suffixGroup → AND class 组合
  */
 function buildPopupClassMap(prefixes: string[]): PopupClassMap {
   const result = {} as PopupClassMap;
-  const entries = Object.entries(POPUP_CLASS_SUFFIX_MAP) as [PopupType, string[]][];
-  for (const [type, suffixClasses] of entries) {
-    result[type] = prefixes.map((prefix) =>
-      suffixClasses.map((suffix) => `${prefix}${suffix}`)
-    );
+  const entries = Object.entries(POPUP_CLASS_SUFFIX_MAP) as [PopupType, string[][]][];
+  for (const [type, suffixGroups] of entries) {
+    const selectorSets: string[][] = [];
+    for (const suffixGroup of suffixGroups) {
+      for (const prefix of prefixes) {
+        selectorSets.push(suffixGroup.map((suffix) => `${prefix}${suffix}`));
+      }
+    }
+    result[type] = selectorSets;
   }
   return result;
 }
@@ -248,9 +260,9 @@ export class TestIdObserver {
     }
 
     // 3. 浮层内部子节点 (Modal/Drawer/Dropdown 内的按钮、输入框等)
-    const popupAncestorType = this.detectPopupAncestor(node);
-    if (popupAncestorType) {
-      this.handlePopupChildNode(node, popupAncestorType, config);
+    const popupAncestor = this.detectPopupAncestor(node);
+    if (popupAncestor) {
+      this.handlePopupChildNode(node, popupAncestor.type, popupAncestor.element, config);
       return;
     }
 
@@ -372,16 +384,16 @@ export class TestIdObserver {
    * 因为 Ant Design Vue 4 可能在浮层根节点外包一层 wrapper DIV)。
    * 找到浮层根节点后，继续向上验证其祖先链能到达 body (确保不在 #app 内)。
    *
-   * @returns 浮层类型或 null (不在任何浮层内)
+   * @returns 浮层类型 + 祖先元素，或 null (不在任何浮层内)
    */
-  private detectPopupAncestor(node: HTMLElement): PopupType | null {
+  private detectPopupAncestor(node: HTMLElement): { type: PopupType; element: HTMLElement } | null {
     let current: HTMLElement | null = node.parentElement;
     while (current) {
       const type = this.matchPopupClass(current);
       if (type) {
         // 验证浮层根节点最终连接到 body (排除页面内误匹配)
         const reachesBody = this.reachesBody(current);
-        if (reachesBody) return type;
+        if (reachesBody) return { type, element: current };
       }
       if (current === document.body || current.id === 'app') break;
       current = current.parentElement;
@@ -454,6 +466,9 @@ export class TestIdObserver {
   /**
    * 处理浮层内部子节点 (Modal/Drawer/Dropdown 内的按钮、输入框等)
    *
+   * 每个浮层实例独立计数: 以浮层根节点 data-testid 作为隔离 key，
+   * 重复打开相同类型的浮层，子元素 ID 均从 0 重新开始。
+   *
    * ID 格式: ${runtimePagePrefix}${popupPrefix}${tag}_${counter}
    * 例: hall_dynamic_modal_button_0, hall_dynamic_select_div_2
    *
@@ -462,12 +477,16 @@ export class TestIdObserver {
   private handlePopupChildNode(
     node: HTMLElement,
     popupType: PopupType,
+    popupElement: HTMLElement,
     config: TestIdMarkConfig
   ): void {
     if (config.onlyInteractive && !this.isInteractive(node)) return;
 
     const tag = this.getSimpleTag(node);
-    const key = `${popupType}_${tag}`;
+
+    // 以浮层根节点的 data-testid 作为隔离 key，实现每个浮层实例独立计数
+    const popupRootTestId = popupElement.getAttribute('data-testid') || `${popupType}_unknown`;
+    const key = `${popupRootTestId}_${tag}`;
 
     const current = this.state.popupChildCounter.get(key) ?? 0;
     this.state.popupChildCounter.set(key, current + 1);

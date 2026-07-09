@@ -10,7 +10,7 @@
 /**
  * 支持的浮层类型
  */
-type PopupType = 'modal' | 'drawer' | 'select' | 'datePicker' | 'popconfirm' | 'dropdown' | 'tooltip';
+type PopupType = 'modal' | 'drawer' | 'select' | 'datePicker' | 'popconfirm' | 'dropdown' | 'tooltip' | 'message';
 /**
  * 全量配置接口
  */
@@ -291,7 +291,7 @@ declare class TestIdObserver {
      * 因为 Ant Design Vue 4 可能在浮层根节点外包一层 wrapper DIV)。
      * 找到浮层根节点后，继续向上验证其祖先链能到达 body (确保不在 #app 内)。
      *
-     * @returns 浮层类型或 null (不在任何浮层内)
+     * @returns 浮层类型 + 祖先元素，或 null (不在任何浮层内)
      */
     private detectPopupAncestor;
     /**
@@ -313,6 +313,9 @@ declare class TestIdObserver {
     private handleDynamicNode;
     /**
      * 处理浮层内部子节点 (Modal/Drawer/Dropdown 内的按钮、输入框等)
+     *
+     * 每个浮层实例独立计数: 以浮层根节点 data-testid 作为隔离 key，
+     * 重复打开相同类型的浮层，子元素 ID 均从 0 重新开始。
      *
      * ID 格式: ${runtimePagePrefix}${popupPrefix}${tag}_${counter}
      * 例: hall_dynamic_modal_button_0, hall_dynamic_select_div_2

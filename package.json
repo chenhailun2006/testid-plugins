@@ -4,11 +4,11 @@
   "private": true,
   "description": "全自动 DOM 打标 data-testid 工具 — Vue 3 + Vite + Ant Design Vue",
   "scripts": {
-    "build:plugin": "pnpm --filter @chenhailun2006/vite-plugin-auto-testid build",
-    "build:runtime": "pnpm --filter @chenhailun2006/antd-testid-runtime build",
+    "build:plugin": "pnpm --filter @testid/vite-plugin-auto-testid build",
+    "build:runtime": "pnpm --filter @testid/antd-testid-runtime build",
     "build:all": "pnpm build:plugin && pnpm build:runtime",
-    "publish:plugin": "pnpm --filter @chenhailun2006/vite-plugin-auto-testid publish",
-    "publish:runtime": "pnpm --filter @chenhailun2006/antd-testid-runtime publish",
+    "publish:plugin": "pnpm --filter @testid/vite-plugin-auto-testid publish",
+    "publish:runtime": "pnpm --filter @testid/antd-testid-runtime publish",
     "publish:all": "pnpm publish:plugin && pnpm publish:runtime",
     "dev:demo": "pnpm --filter vue3-antd-demo dev"
   },

@@ -7,12 +7,12 @@
 ```
 testid-plugins/
 ├── packages/
-│   ├── @chenhailun2006/vite-plugin-auto-testid/   # Vite 编译期打标插件
+│   ├── @testid/vite-plugin-auto-testid/   # Vite 编译期打标插件
 │   │   └── src/
 │   │       ├── index.ts           # 插件入口
 │   │       ├── transform.ts       # 模板 AST 转换核心
 │   │       └── types.ts           # 类型定义
-│   └── @chenhailun2006/antd-testid-runtime/       # Ant Design Vue 运行时兜底打标模块
+│   └── @testid/antd-testid-runtime/       # Ant Design Vue 运行时兜底打标模块
 │       └── src/
 │           ├── index.ts           # 统一导出入口
 │           ├── config/
@@ -122,7 +122,7 @@ pnpm dev:demo
 #### vite.config.ts
 
 ```typescript
-import vitePluginAutoTestId from '@chenhailun2006/vite-plugin-auto-testid';
+import vitePluginAutoTestId from '@testid/vite-plugin-auto-testid';
 
 export default defineConfig({
   plugins: [
@@ -146,7 +146,7 @@ import {
   resetAllAnchorCounters,
   resetAllPopupCounters,
   TestIdChecker,
-} from '@chenhailun2006/antd-testid-runtime';
+} from '@testid/antd-testid-runtime';
 
 if (import.meta.env.DEV) {
   initConfig({
