@@ -7,12 +7,17 @@
 ```
 testid-plugins/
 ├── packages/
-│   ├── @testid/vite-plugin-auto-testid/   # Vite 编译期打标插件
+│   ├── @testid/vite-plugin-auto-testid/     # Vite 编译期打标插件
 │   │   └── src/
 │   │       ├── index.ts           # 插件入口
 │   │       ├── transform.ts       # 模板 AST 转换核心
 │   │       └── types.ts           # 类型定义
-│   └── @testid/antd-testid-runtime/       # Ant Design Vue 运行时兜底打标模块
+│   ├── @testid/webpack-plugin-auto-testid/  # Webpack 编译期打标 Loader
+│   │   └── src/
+│   │       ├── index.ts           # Loader 入口
+│   │       ├── transform.ts       # 模板 AST 转换核心 (与 Vite 版一致)
+│   │       └── types.ts           # 类型定义
+│   └── @testid/antd-testid-runtime/         # 运行时兜底打标模块
 │       └── src/
 │           ├── index.ts           # 统一导出入口
 │           ├── config/
@@ -40,8 +45,9 @@ testid-plugins/
 │ 编译期            │ 运行时                    │
 │ vite-plugin-auto- │ testIdAnchorCounter      │
 │ testid            │ testIdPopupCounter       │
-│ (Vue SFC AST)     │ testIdObserver           │
-│                   │ testIdChecker            │
+│ webpack-plugin-   │ testIdObserver           │
+│ auto-testid       │ testIdChecker            │
+│ (Vue SFC AST)     │                          │
 ├──────────────────┴──────────────────────────┤
 │ 配置层: testMark.ts                         │
 └─────────────────────────────────────────────┘
