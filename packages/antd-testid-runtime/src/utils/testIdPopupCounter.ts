@@ -10,7 +10,7 @@
  *   - Select 第 2 次出现: select_div_1
  */
 
-import type { PopupType } from '../config/testMark';
+import type { PopupType } from '../adapters/types';
 import { getConfig } from '../config/testMark';
 
 // ============================================================

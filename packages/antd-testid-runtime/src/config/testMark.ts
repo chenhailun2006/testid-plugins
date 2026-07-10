@@ -6,24 +6,21 @@
  * - 黑白名单
  * - 开关
  * - 浮层前缀映射
+ * - UI 库适配器
  */
+
+import type { UiAdapter, PopupType } from '../adapters/types';
+import { antdAdapter } from '../adapters/antd';
+
+// ============================================================
+// 类型重导出
+// ============================================================
+
+export type { PopupType } from '../adapters/types';
 
 // ============================================================
 // 类型定义
 // ============================================================
-
-/**
- * 支持的浮层类型
- */
-export type PopupType =
-  | 'modal'
-  | 'drawer'
-  | 'select'
-  | 'datePicker'
-  | 'popconfirm'
-  | 'dropdown'
-  | 'tooltip'
-  | 'message';
 
 /**
  * 全量配置接口
@@ -46,18 +43,28 @@ export interface TestIdMarkConfig {
   /** 页面内动态节点统一前缀 (默认 "dynamic_") */
   runtimePagePrefix: string;
 
-  /** Antd 浮层组件专属前缀映射 */
+  /** 浮层组件专属前缀映射 */
   popupPrefixMap: Record<PopupType, string>;
 
   /**
-   * Ant Design Vue CSS 类名前缀 (对应 ConfigProvider 的 prefixCls)
+   * UI 库适配器列表 (默认为 [antdAdapter])
    *
-   * 支持数组，可同时匹配多个前缀体系:
-   *   默认: ['ant'] → 匹配 .ant-modal, .ant-picker-dropdown 等
-   *   若项目使用 <a-config-provider prefixCls="my-ui"> 则设为 ['my-ui']
-   *   混合使用: ['ant', 'my-ui'] → 同时匹配两个体系的所有浮层组件
+   * 每个适配器定义了一个 UI 库的浮层 CSS class 识别规则、
+   * 交互标签列表和标签前缀。Observer 自动合并所有适配器的规则。
+   *
+   * 仅使用 Ant Design Vue:
+   *   adapters: [antdAdapter]
+   *
+   * 仅使用 Element UI:
+   *   adapters: [elementAdapter]
+   *
+   * 同时使用两种 UI 库:
+   *   adapters: [antdAdapter, elementAdapter]
+   *
+   * 自定义 Ant Design Vue CSS 前缀 (如 <a-config-provider prefixCls="my-ui">):
+   *   adapters: [{ ...antdAdapter, cssPrefixes: ['my-ui'] }]
    */
-  antdClassPrefix: string[];
+  adapters: UiAdapter[];
 
   /** 忽略不打标的 HTML 标签名 */
   ignoreTags: string[];
@@ -75,24 +82,6 @@ export interface TestIdMarkConfig {
   resetPopupCounterOnRouteChange: boolean;
 }
 
-/**
- * 交互控件白名单 (onlyInteractive === true 时生效)
- */
-export const INTERACTIVE_TAGS = new Set([
-  'button',
-  'a-button',
-  'input',
-  'a-input',
-  'a-input-number',
-  'select',
-  'a-select',
-  'textarea',
-  'a-textarea',
-  'a-checkbox',
-  'a-radio',
-  'a-switch',
-]);
-
 // ============================================================
 // 默认配置
 // ============================================================
@@ -105,7 +94,7 @@ export const defaultConfig: TestIdMarkConfig = {
   globalPrefix: '',
   compilePrefix: 'static_',
   runtimePagePrefix: 'dynamic_',
-  antdClassPrefix: ['ant'],
+  adapters: [antdAdapter],
   popupPrefixMap: {
     modal: 'modal_',
     drawer: 'drawer_',

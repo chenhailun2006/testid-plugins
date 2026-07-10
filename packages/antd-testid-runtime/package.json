@@ -1,6 +1,6 @@
 {
   "name": "@testid/antd-testid-runtime",
-  "version": "1.0.8",
+  "version": "1.0.12",
   "description": "运行时兜底打标模块 — MutationObserver + 锚点计数器 + 浮层计数器 + ID 重复检测",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

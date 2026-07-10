@@ -12,6 +12,12 @@
 
 import type { TestIdMarkConfig, PopupType } from '../config/testMark';
 import { getConfig } from '../config/testMark';
+import type { UiAdapter } from '../adapters/types';
+import {
+  mergeCssPrefixes,
+  mergeInteractiveTags,
+  mergeTagPrefixPattern,
+} from '../adapters/types';
 import {
   getNextAnchorLocalIndex,
   parseBaseKey,
@@ -42,60 +48,50 @@ interface ObserverState {
   currentRoute: string;
   /** 页面内 dynamic 节点的兄弟索引计数器 (key: routeName_tag) */
   dynamicCounter: Map<string, number>;
-  /** 浮层内部子节点的计数器 (key: popupType_tag) */
+  /** 浮层内部子节点的全局计数器 (key: popupType_tag，同类型浮层共享) */
   popupChildCounter: Map<string, number>;
 }
 
 // ============================================================
-// 浮层识别规则
+// 浮层识别规则 (从适配器组装)
 // ============================================================
 
 /**
- * 浮层组件的 CSS class 后缀模板 (不含前缀)
+ * 根据适配器列表构建浮层 class 匹配表
  *
- * 结构: PopupType → string[][]，两层数组含义:
- *   - 外层数组: OR 关系，任一内层数组命中即匹配该浮层类型
- *   - 内层数组: AND 关系，所有 class 必须同时出现在元素上
- *
- * 例: popconfirm → [['-popover', '-popconfirm']] 要求元素同时有 ant-popover 和 ant-popconfirm
- *     datePicker → [['-picker-dropdown'], ['-calendar-picker-container']] 新/旧版本任一命中即可
- *
- * 配合 antdClassPrefix 动态构建:
- *   例: antdClassPrefix = ['ant', 'custom']
- *     → modal: [['ant-modal'], ['custom-modal']]
- *     → popconfirm: [['ant-popover', 'ant-popconfirm'], ['custom-popover', 'custom-popconfirm']]
- */
-const POPUP_CLASS_SUFFIX_MAP: Record<PopupType, string[][]> = {
-  modal:      [['-modal']],
-  drawer:     [['-drawer']],
-  select:     [['-select-dropdown']],
-  datePicker: [
-    ['-picker-dropdown'],            // Ant Design Vue 4.x (新)
-    ['-calendar-picker-container'],  // Ant Design Vue 1.x (旧)
-  ],
-  popconfirm: [['-popover', '-popconfirm']],
-  dropdown:   [['-dropdown']],
-  tooltip:    [['-tooltip']],
-  message:    [['-message']],
-};
-
-/**
- * 根据 antdClassPrefix[] 构建浮层 class 匹配表
+ * 合并所有适配器的 popupClassSuffixMap × cssPrefixes，
+ * 去重相同 (type, class组合) 的匹配规则。
  *
  * 外层: OR 遍历每个 suffixGroup
  * 内层: 每个 prefix × suffixGroup → AND class 组合
  */
-function buildPopupClassMap(prefixes: string[]): PopupClassMap {
+function buildPopupClassMap(adapters: UiAdapter[]): PopupClassMap {
   const result = {} as PopupClassMap;
-  const entries = Object.entries(POPUP_CLASS_SUFFIX_MAP) as [PopupType, string[][]][];
-  for (const [type, suffixGroups] of entries) {
-    const selectorSets: string[][] = [];
-    for (const suffixGroup of suffixGroups) {
-      for (const prefix of prefixes) {
-        selectorSets.push(suffixGroup.map((suffix) => `${prefix}${suffix}`));
+
+  // 用 Set 去重 (序列化后比较)
+  const seen = new Map<PopupType, Set<string>>();
+
+  for (const adapter of adapters) {
+    const entries = Object.entries(adapter.popupClassSuffixMap) as [PopupType, string[][]][];
+    for (const [type, suffixGroups] of entries) {
+      if (!seen.has(type)) {
+        seen.set(type, new Set());
+        result[type] = [];
+      }
+      const typeSeen = seen.get(type)!;
+      const selectorSets = result[type];
+
+      for (const suffixGroup of suffixGroups) {
+        for (const prefix of adapter.cssPrefixes) {
+          const classCombo = suffixGroup.map((suffix) => `${prefix}${suffix}`);
+          const key = classCombo.join('|');
+          if (!typeSeen.has(key)) {
+            typeSeen.add(key);
+            selectorSets.push(classCombo);
+          }
+        }
       }
     }
-    result[type] = selectorSets;
   }
   return result;
 }
@@ -107,12 +103,20 @@ function buildPopupClassMap(prefixes: string[]): PopupClassMap {
 export class TestIdObserver {
   private state: ObserverState;
 
-  /** 浮层 class 匹配映射 (根据 antdClassPrefix 动态构建) */
+  /** 浮层 class 匹配映射 (从 adapters 动态构建) */
   private popupClassMap: PopupClassMap;
+
+  /** 合并后的交互标签列表 (来自所有适配器) */
+  private interactiveTags: string[];
+
+  /** 合并后的标签前缀正则 (用于 getSimpleTag) */
+  private tagPrefixPattern: RegExp | null;
 
   constructor() {
     const config = getConfig();
-    this.popupClassMap = buildPopupClassMap(config.antdClassPrefix);
+    this.popupClassMap = buildPopupClassMap(config.adapters);
+    this.interactiveTags = mergeInteractiveTags(config.adapters);
+    this.tagPrefixPattern = mergeTagPrefixPattern(config.adapters);
 
     this.state = {
       observer: null,
@@ -232,8 +236,9 @@ export class TestIdObserver {
    * 决策优先级:
    *   0. 已有 data-testid → 跳过
    *   1. 带 data-test-base-key → 公共组件实例 (锚点定位)
-   *   2. body 直系浮层根节点 → 匹配浮层类型 → 独立前缀
-   *   3. 浮层内部子节点 → 查找浮层祖先 → 浮层独立前缀 + 计数器
+   *   2. 浮层内部子节点 → 先查祖先，再查自身是否 root
+   *       (避免嵌套浮层如 el-cascader-panel ∈ el-cascader__suggestion-panel 被误判为独立 root)
+   *   3. body 直系浮层根节点 → 匹配浮层类型 → 独立前缀
    *   4. #app 内普通节点 → dynamic
    */
   private processSingleNode(node: HTMLElement): void {
@@ -252,17 +257,17 @@ export class TestIdObserver {
       return;
     }
 
-    // 2. body 直系浮层根节点
-    const popupType = this.detectPopupType(node);
-    if (popupType) {
-      this.handlePopupNode(node, popupType);
+    // 2. 先查是否在已知浮层内部 (优先于 root 判定)
+    const popupAncestor = this.detectPopupAncestor(node);
+    if (popupAncestor) {
+      this.handlePopupChildNode(node, popupAncestor.type, config);
       return;
     }
 
-    // 3. 浮层内部子节点 (Modal/Drawer/Dropdown 内的按钮、输入框等)
-    const popupAncestor = this.detectPopupAncestor(node);
-    if (popupAncestor) {
-      this.handlePopupChildNode(node, popupAncestor.type, popupAncestor.element, config);
+    // 3. 再查是否为 body 直系浮层根节点
+    const popupType = this.detectPopupType(node);
+    if (popupType) {
+      this.handlePopupNode(node, popupType);
       return;
     }
 
@@ -466,8 +471,8 @@ export class TestIdObserver {
   /**
    * 处理浮层内部子节点 (Modal/Drawer/Dropdown 内的按钮、输入框等)
    *
-   * 每个浮层实例独立计数: 以浮层根节点 data-testid 作为隔离 key，
-   * 重复打开相同类型的浮层，子元素 ID 均从 0 重新开始。
+   * 同类型浮层的子节点共享全局计数器 (key: popupType_tag)，
+   * 确保页面上多个同类下拉选择框的下拉选项 testid 全局唯一。
    *
    * ID 格式: ${runtimePagePrefix}${popupPrefix}${tag}_${counter}
    * 例: hall_dynamic_modal_button_0, hall_dynamic_select_div_2
@@ -477,16 +482,15 @@ export class TestIdObserver {
   private handlePopupChildNode(
     node: HTMLElement,
     popupType: PopupType,
-    popupElement: HTMLElement,
     config: TestIdMarkConfig
   ): void {
     if (config.onlyInteractive && !this.isInteractive(node)) return;
 
     const tag = this.getSimpleTag(node);
 
-    // 以浮层根节点的 data-testid 作为隔离 key，实现每个浮层实例独立计数
-    const popupRootTestId = popupElement.getAttribute('data-testid') || `${popupType}_unknown`;
-    const key = `${popupRootTestId}_${tag}`;
+    // 同类型浮层的子节点共享全局计数器
+    // 确保页面上多个相同类型的下拉选择框，其下拉选项 testid 全局唯一
+    const key = `${popupType}_${tag}`;
 
     const current = this.state.popupChildCounter.get(key) ?? 0;
     this.state.popupChildCounter.set(key, current + 1);
@@ -512,32 +516,32 @@ export class TestIdObserver {
   /**
    * 获取元素的简化标签名
    *
-   * 处理 Antd 组件前缀: a-button → button, a-input → input
+   * 去除所有适配器注册的 UI 库标签前缀:
+   *   AntD: a-button → button, a-input → input
+   *   Element: el-button → button, el-input → input
    */
   private getSimpleTag(node: HTMLElement): string {
-    return node.tagName.toLowerCase().replace(/^a-/, '');
+    let tag = node.tagName.toLowerCase();
+    if (this.tagPrefixPattern) {
+      tag = tag.replace(this.tagPrefixPattern, '');
+    }
+    return tag;
   }
 
   /**
    * 判断是否可交互元素
    *
    * 可交互特征:
-   *   - 交互类标签: button, input, select, textarea
+   *   - 匹配任意适配器的交互标签 (含原生 + UI 库前缀)
    *   - onclick 属性
-   *   - role="button" / role="checkbox" / role="radio"
-   *   - cursor:pointer (不检测，因为可能从 CSS 继承，误判率高)
+   *   - role="button" / role="checkbox" / role="radio" / role="switch"
+   *   - tabindex 属性
    */
   private isInteractive(node: HTMLElement): boolean {
     const tag = node.tagName.toLowerCase();
 
-    // 交互标签 (含 Antd 前缀)
-    const interactiveTags = [
-      'button', 'a-button',
-      'input', 'a-input', 'a-input-number',
-      'select', 'a-select',
-      'textarea', 'a-textarea',
-    ];
-    if (interactiveTags.includes(tag)) return true;
+    // 匹配所有适配器的交互标签
+    if (this.interactiveTags.includes(tag)) return true;
 
     // onclick 原生事件
     if (node.hasAttribute('onclick')) return true;

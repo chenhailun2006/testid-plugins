@@ -15,6 +15,16 @@ importers:
         specifier: ^3.4.0
         version: 3.5.39(typescript@5.9.3)
 
+  examples/vue2-element-demo:
+    dependencies:
+      '@testid/antd-testid-runtime':
+        specifier: workspace:*
+        version: link:../../packages/antd-testid-runtime
+    devDependencies:
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.21(@types/node@20.19.43)
+
   examples/vue3-antd-demo:
     dependencies:
       '@testid/antd-testid-runtime':

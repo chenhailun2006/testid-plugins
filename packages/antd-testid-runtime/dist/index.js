@@ -20,12 +20,13 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/index.ts
 var index_exports = {};
 __export(index_exports, {
-  INTERACTIVE_TAGS: () => INTERACTIVE_TAGS,
   TestIdChecker: () => TestIdChecker,
   TestIdObserver: () => TestIdObserver,
+  antdAdapter: () => antdAdapter,
   buildAnchorTestId: () => buildAnchorTestId,
   buildPopupTestId: () => buildPopupTestId,
   defaultConfig: () => defaultConfig,
+  elementAdapter: () => elementAdapter,
   getAnchorCounterMap: () => getAnchorCounterMap,
   getConfig: () => getConfig,
   getNextAnchorLocalIndex: () => getNextAnchorLocalIndex,
@@ -40,27 +41,50 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 
+// src/adapters/antd.ts
+var popupClassSuffixMap = {
+  modal: [["-modal"]],
+  drawer: [["-drawer"]],
+  select: [["-select-dropdown"]],
+  datePicker: [
+    ["-picker-dropdown"],
+    // Ant Design Vue 4.x
+    ["-calendar-picker-container"]
+    // Ant Design Vue 1.x
+  ],
+  popconfirm: [["-popover", "-popconfirm"]],
+  dropdown: [["-dropdown"]],
+  tooltip: [["-tooltip"]],
+  message: [["-message"]]
+};
+var antdAdapter = {
+  name: "ant-design-vue",
+  cssPrefixes: ["ant"],
+  popupClassSuffixMap,
+  interactiveTags: [
+    "button",
+    "input",
+    "select",
+    "textarea",
+    "a-button",
+    "a-input",
+    "a-input-number",
+    "a-select",
+    "a-textarea",
+    "a-checkbox",
+    "a-radio",
+    "a-switch"
+  ],
+  tagPrefixPattern: /^a-/
+};
+
 // src/config/testMark.ts
-var INTERACTIVE_TAGS = /* @__PURE__ */ new Set([
-  "button",
-  "a-button",
-  "input",
-  "a-input",
-  "a-input-number",
-  "select",
-  "a-select",
-  "textarea",
-  "a-textarea",
-  "a-checkbox",
-  "a-radio",
-  "a-switch"
-]);
 var defaultConfig = {
   enable: true,
   globalPrefix: "",
   compilePrefix: "static_",
   runtimePagePrefix: "dynamic_",
-  antdClassPrefix: ["ant"],
+  adapters: [antdAdapter],
   popupPrefixMap: {
     modal: "modal_",
     drawer: "drawer_",
@@ -115,6 +139,60 @@ function initConfig(custom) {
 function getConfig() {
   return globalConfig;
 }
+
+// src/adapters/element.ts
+var popupClassSuffixMap2 = {
+  modal: [["-dialog"]],
+  drawer: [["-drawer"]],
+  select: [
+    ["-select-dropdown"],
+    // ElSelect 下拉面板
+    ["-cascader__suggestion-panel"],
+    // ElCascader 浮层 (suggestion 模式)
+    ["-cascader-panel"]
+    // ElCascader 浮层 (panel 模式 / 低版本)
+  ],
+  datePicker: [
+    ["-picker-panel"],
+    // 日期/时间选择器面板
+    ["-date-range-picker__content"]
+    // 日期范围选择器内容区
+  ],
+  popconfirm: [
+    ["-message-box"],
+    // Element MessageBox
+    ["-popconfirm"]
+    // Element Popconfirm
+  ],
+  dropdown: [["-dropdown-menu"]],
+  tooltip: [
+    ["-tooltip__popper"],
+    // Element Tooltip 浮层
+    ["-popover"]
+    // Element Popover 浮层 (语义上接近 tooltip)
+  ],
+  message: [["-message"]]
+};
+var elementAdapter = {
+  name: "element-ui",
+  cssPrefixes: ["el"],
+  popupClassSuffixMap: popupClassSuffixMap2,
+  interactiveTags: [
+    "button",
+    "input",
+    "select",
+    "textarea",
+    "el-button",
+    "el-input",
+    "el-input-number",
+    "el-select",
+    "el-textarea",
+    "el-checkbox",
+    "el-radio",
+    "el-switch"
+  ],
+  tagPrefixPattern: /^el-/
+};
 
 // src/utils/testIdAnchorCounter.ts
 var anchorCounterMap = /* @__PURE__ */ new Map();
@@ -184,33 +262,46 @@ function buildPopupTestId(type, tag, counterId) {
   return `${config.runtimePagePrefix}${popupPrefix}${tag}_${counterId}`;
 }
 
+// src/adapters/types.ts
+function mergeInteractiveTags(adapters) {
+  const set = /* @__PURE__ */ new Set();
+  for (const a of adapters) {
+    for (const tag of a.interactiveTags) {
+      set.add(tag);
+    }
+  }
+  return [...set];
+}
+function mergeTagPrefixPattern(adapters) {
+  const patterns = adapters.map((a) => a.tagPrefixPattern.source).filter(Boolean);
+  if (patterns.length === 0) return null;
+  return new RegExp(patterns.join("|"), "gi");
+}
+
 // src/utils/testIdObserver.ts
-var POPUP_CLASS_SUFFIX_MAP = {
-  modal: [["-modal"]],
-  drawer: [["-drawer"]],
-  select: [["-select-dropdown"]],
-  datePicker: [
-    ["-picker-dropdown"],
-    // Ant Design Vue 4.x (新)
-    ["-calendar-picker-container"]
-    // Ant Design Vue 1.x (旧)
-  ],
-  popconfirm: [["-popover", "-popconfirm"]],
-  dropdown: [["-dropdown"]],
-  tooltip: [["-tooltip"]],
-  message: [["-message"]]
-};
-function buildPopupClassMap(prefixes) {
+function buildPopupClassMap(adapters) {
   const result = {};
-  const entries = Object.entries(POPUP_CLASS_SUFFIX_MAP);
-  for (const [type, suffixGroups] of entries) {
-    const selectorSets = [];
-    for (const suffixGroup of suffixGroups) {
-      for (const prefix of prefixes) {
-        selectorSets.push(suffixGroup.map((suffix) => `${prefix}${suffix}`));
+  const seen = /* @__PURE__ */ new Map();
+  for (const adapter of adapters) {
+    const entries = Object.entries(adapter.popupClassSuffixMap);
+    for (const [type, suffixGroups] of entries) {
+      if (!seen.has(type)) {
+        seen.set(type, /* @__PURE__ */ new Set());
+        result[type] = [];
+      }
+      const typeSeen = seen.get(type);
+      const selectorSets = result[type];
+      for (const suffixGroup of suffixGroups) {
+        for (const prefix of adapter.cssPrefixes) {
+          const classCombo = suffixGroup.map((suffix) => `${prefix}${suffix}`);
+          const key = classCombo.join("|");
+          if (!typeSeen.has(key)) {
+            typeSeen.add(key);
+            selectorSets.push(classCombo);
+          }
+        }
       }
     }
-    result[type] = selectorSets;
   }
   return result;
 }
@@ -233,7 +324,9 @@ var TestIdObserver = class {
       }
     };
     const config = getConfig();
-    this.popupClassMap = buildPopupClassMap(config.antdClassPrefix);
+    this.popupClassMap = buildPopupClassMap(config.adapters);
+    this.interactiveTags = mergeInteractiveTags(config.adapters);
+    this.tagPrefixPattern = mergeTagPrefixPattern(config.adapters);
     this.state = {
       observer: null,
       isRunning: false,
@@ -319,8 +412,9 @@ var TestIdObserver = class {
    * 决策优先级:
    *   0. 已有 data-testid → 跳过
    *   1. 带 data-test-base-key → 公共组件实例 (锚点定位)
-   *   2. body 直系浮层根节点 → 匹配浮层类型 → 独立前缀
-   *   3. 浮层内部子节点 → 查找浮层祖先 → 浮层独立前缀 + 计数器
+   *   2. 浮层内部子节点 → 先查祖先，再查自身是否 root
+   *       (避免嵌套浮层如 el-cascader-panel ∈ el-cascader__suggestion-panel 被误判为独立 root)
+   *   3. body 直系浮层根节点 → 匹配浮层类型 → 独立前缀
    *   4. #app 内普通节点 → dynamic
    */
   processSingleNode(node) {
@@ -332,14 +426,14 @@ var TestIdObserver = class {
       this.handleBaseKeyNode(node, baseKey, config);
       return;
     }
+    const popupAncestor = this.detectPopupAncestor(node);
+    if (popupAncestor) {
+      this.handlePopupChildNode(node, popupAncestor.type, config);
+      return;
+    }
     const popupType = this.detectPopupType(node);
     if (popupType) {
       this.handlePopupNode(node, popupType);
-      return;
-    }
-    const popupAncestor = this.detectPopupAncestor(node);
-    if (popupAncestor) {
-      this.handlePopupChildNode(node, popupAncestor.type, popupAncestor.element, config);
       return;
     }
     if (this.isInsideApp(node)) {
@@ -501,19 +595,18 @@ var TestIdObserver = class {
   /**
    * 处理浮层内部子节点 (Modal/Drawer/Dropdown 内的按钮、输入框等)
    *
-   * 每个浮层实例独立计数: 以浮层根节点 data-testid 作为隔离 key，
-   * 重复打开相同类型的浮层，子元素 ID 均从 0 重新开始。
+   * 同类型浮层的子节点共享全局计数器 (key: popupType_tag)，
+   * 确保页面上多个同类下拉选择框的下拉选项 testid 全局唯一。
    *
    * ID 格式: ${runtimePagePrefix}${popupPrefix}${tag}_${counter}
    * 例: hall_dynamic_modal_button_0, hall_dynamic_select_div_2
    *
    * 浮层子元素均为运行时注入，统一使用 runtimePagePrefix 前缀。
    */
-  handlePopupChildNode(node, popupType, popupElement, config) {
+  handlePopupChildNode(node, popupType, config) {
     if (config.onlyInteractive && !this.isInteractive(node)) return;
     const tag = this.getSimpleTag(node);
-    const popupRootTestId = popupElement.getAttribute("data-testid") || `${popupType}_unknown`;
-    const key = `${popupRootTestId}_${tag}`;
+    const key = `${popupType}_${tag}`;
     const current = this.state.popupChildCounter.get(key) ?? 0;
     this.state.popupChildCounter.set(key, current + 1);
     const popupPrefix = config.popupPrefixMap[popupType] || `${popupType}_`;
@@ -534,34 +627,29 @@ var TestIdObserver = class {
   /**
    * 获取元素的简化标签名
    *
-   * 处理 Antd 组件前缀: a-button → button, a-input → input
+   * 去除所有适配器注册的 UI 库标签前缀:
+   *   AntD: a-button → button, a-input → input
+   *   Element: el-button → button, el-input → input
    */
   getSimpleTag(node) {
-    return node.tagName.toLowerCase().replace(/^a-/, "");
+    let tag = node.tagName.toLowerCase();
+    if (this.tagPrefixPattern) {
+      tag = tag.replace(this.tagPrefixPattern, "");
+    }
+    return tag;
   }
   /**
    * 判断是否可交互元素
    *
    * 可交互特征:
-   *   - 交互类标签: button, input, select, textarea
+   *   - 匹配任意适配器的交互标签 (含原生 + UI 库前缀)
    *   - onclick 属性
-   *   - role="button" / role="checkbox" / role="radio"
-   *   - cursor:pointer (不检测，因为可能从 CSS 继承，误判率高)
+   *   - role="button" / role="checkbox" / role="radio" / role="switch"
+   *   - tabindex 属性
    */
   isInteractive(node) {
     const tag = node.tagName.toLowerCase();
-    const interactiveTags = [
-      "button",
-      "a-button",
-      "input",
-      "a-input",
-      "a-input-number",
-      "select",
-      "a-select",
-      "textarea",
-      "a-textarea"
-    ];
-    if (interactiveTags.includes(tag)) return true;
+    if (this.interactiveTags.includes(tag)) return true;
     if (node.hasAttribute("onclick")) return true;
     const role = node.getAttribute("role");
     if (role === "button" || role === "checkbox" || role === "radio" || role === "switch") {
@@ -747,12 +835,13 @@ var TestIdChecker = class {
 };
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  INTERACTIVE_TAGS,
   TestIdChecker,
   TestIdObserver,
+  antdAdapter,
   buildAnchorTestId,
   buildPopupTestId,
   defaultConfig,
+  elementAdapter,
   getAnchorCounterMap,
   getConfig,
   getNextAnchorLocalIndex,

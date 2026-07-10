@@ -10,7 +10,7 @@
  *   - modal / drawer / select / datePicker / popconfirm / dropdown / tooltip: 各类浮层
  */
 
-import type { PopupType } from '../config/testMark';
+import type { PopupType } from '../adapters/types';
 
 // ============================================================
 // 类型定义

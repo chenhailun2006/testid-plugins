@@ -1,4 +1,53 @@
 /**
+ * UI 库适配器接口 — adapters/types.ts
+ *
+ * 将 UI 库相关的 CSS class 命名、标签前缀、交互元素识别等逻辑
+ * 从核心 Observer 中解耦，实现可插拔的 UI 库支持。
+ *
+ * 每个适配器描述一个 UI 库的浮层组件识别规则，
+ * 多个适配器可组合使用 (如同时使用 Ant Design Vue + Element UI)。
+ */
+/**
+ * 支持的浮层类型
+ */
+type PopupType = 'modal' | 'drawer' | 'select' | 'datePicker' | 'popconfirm' | 'dropdown' | 'tooltip' | 'message';
+/**
+ * UI 库适配器接口
+ *
+ * 实现此接口即可让 Observer 自动识别该 UI 库的浮层组件。
+ */
+interface UiAdapter {
+    /** 适配器名称 (调试用) */
+    readonly name: string;
+    /** CSS 类名前缀数组 (如 AntD: ['ant'], Element: ['el']) */
+    readonly cssPrefixes: string[];
+    /**
+     * 浮层 CSS class 后缀映射
+     *
+     * 结构: PopupType → string[][]，两层数组含义:
+     *   - 外层: OR 关系，任一内层命中即匹配
+     *   - 内层: AND 关系，所有 class 必须同时出现
+     *
+     * 后缀不含前缀，由 buildPopupClassMap 动态拼接。
+     */
+    readonly popupClassSuffixMap: Record<PopupType, string[][]>;
+    /**
+     * 交互标签名列表 (用于 onlyInteractive 模式)
+     *
+     * 包含 UI 库的组件标签名 (如 'a-button', 'el-input') 和原生标签 (如 'button', 'input')。
+     * Observer 会合并所有适配器的 interactiveTags 进行判断。
+     */
+    readonly interactiveTags: string[];
+    /**
+     * 标签前缀正则 (用于 getSimpleTag 去除 UI 库前缀)
+     *
+     * 例: AntD → /^a-/, Element → /^el-/
+     * 多个适配器的正则用 | 合并。
+     */
+    readonly tagPrefixPattern: RegExp;
+}
+
+/**
  * 全局配置模块 — testMark.ts
  *
  * 管理所有打标相关的配置项：
@@ -6,11 +55,9 @@
  * - 黑白名单
  * - 开关
  * - 浮层前缀映射
+ * - UI 库适配器
  */
-/**
- * 支持的浮层类型
- */
-type PopupType = 'modal' | 'drawer' | 'select' | 'datePicker' | 'popconfirm' | 'dropdown' | 'tooltip' | 'message';
+
 /**
  * 全量配置接口
  */
@@ -28,17 +75,27 @@ interface TestIdMarkConfig {
     compilePrefix: string;
     /** 页面内动态节点统一前缀 (默认 "dynamic_") */
     runtimePagePrefix: string;
-    /** Antd 浮层组件专属前缀映射 */
+    /** 浮层组件专属前缀映射 */
     popupPrefixMap: Record<PopupType, string>;
     /**
-     * Ant Design Vue CSS 类名前缀 (对应 ConfigProvider 的 prefixCls)
+     * UI 库适配器列表 (默认为 [antdAdapter])
      *
-     * 支持数组，可同时匹配多个前缀体系:
-     *   默认: ['ant'] → 匹配 .ant-modal, .ant-picker-dropdown 等
-     *   若项目使用 <a-config-provider prefixCls="my-ui"> 则设为 ['my-ui']
-     *   混合使用: ['ant', 'my-ui'] → 同时匹配两个体系的所有浮层组件
+     * 每个适配器定义了一个 UI 库的浮层 CSS class 识别规则、
+     * 交互标签列表和标签前缀。Observer 自动合并所有适配器的规则。
+     *
+     * 仅使用 Ant Design Vue:
+     *   adapters: [antdAdapter]
+     *
+     * 仅使用 Element UI:
+     *   adapters: [elementAdapter]
+     *
+     * 同时使用两种 UI 库:
+     *   adapters: [antdAdapter, elementAdapter]
+     *
+     * 自定义 Ant Design Vue CSS 前缀 (如 <a-config-provider prefixCls="my-ui">):
+     *   adapters: [{ ...antdAdapter, cssPrefixes: ['my-ui'] }]
      */
-    antdClassPrefix: string[];
+    adapters: UiAdapter[];
     /** 忽略不打标的 HTML 标签名 */
     ignoreTags: string[];
     /** 包含此 class 的 DOM 跳过打标 */
@@ -50,10 +107,6 @@ interface TestIdMarkConfig {
     /** 路由切换时是否重置全部浮层计数器 */
     resetPopupCounterOnRouteChange: boolean;
 }
-/**
- * 交互控件白名单 (onlyInteractive === true 时生效)
- */
-declare const INTERACTIVE_TAGS: Set<string>;
 /**
  * 默认配置对象 (enable 默认为 true，由调用方传入 DEV 判断)
  */
@@ -73,6 +126,34 @@ declare function initConfig(custom?: Partial<TestIdMarkConfig>): void;
  * 获取当前全局配置 (只读)
  */
 declare function getConfig(): Readonly<TestIdMarkConfig>;
+
+/**
+ * Ant Design Vue 适配器 — adapters/antd.ts
+ *
+ * 识别 Ant Design Vue 的浮层组件:
+ *   - ant-modal, ant-drawer, ant-select-dropdown, ant-picker-dropdown,
+ *     ant-popover+ant-popconfirm, ant-dropdown, ant-tooltip, ant-message
+ *
+ * 支持多版本兼容:
+ *   - Ant Design Vue 4.x: ant-picker-dropdown
+ *   - Ant Design Vue 1.x: ant-calendar-picker-container
+ */
+
+declare const antdAdapter: UiAdapter;
+
+/**
+ * Element UI 适配器 — adapters/element.ts
+ *
+ * 识别 Element UI / Element Plus 的浮层组件:
+ *   - el-dialog, el-drawer, el-select-dropdown, el-picker-panel,
+ *     el-message-box, el-popconfirm, el-dropdown-menu,
+ *     el-tooltip__popper, el-message
+ *
+ * 注意: el-popper 被多种组件共用 (select/dropdown/tooltip 等)，
+ *       不单独作为识别依据，避免误匹配。
+ */
+
+declare const elementAdapter: UiAdapter;
 
 /**
  * 锚点局部计数器 — testIdAnchorCounter.ts
@@ -205,8 +286,12 @@ declare function buildPopupTestId(type: PopupType, tag: string, counterId: numbe
  */
 declare class TestIdObserver {
     private state;
-    /** 浮层 class 匹配映射 (根据 antdClassPrefix 动态构建) */
+    /** 浮层 class 匹配映射 (从 adapters 动态构建) */
     private popupClassMap;
+    /** 合并后的交互标签列表 (来自所有适配器) */
+    private interactiveTags;
+    /** 合并后的标签前缀正则 (用于 getSimpleTag) */
+    private tagPrefixPattern;
     constructor();
     /**
      * 启动 MutationObserver
@@ -242,8 +327,9 @@ declare class TestIdObserver {
      * 决策优先级:
      *   0. 已有 data-testid → 跳过
      *   1. 带 data-test-base-key → 公共组件实例 (锚点定位)
-     *   2. body 直系浮层根节点 → 匹配浮层类型 → 独立前缀
-     *   3. 浮层内部子节点 → 查找浮层祖先 → 浮层独立前缀 + 计数器
+     *   2. 浮层内部子节点 → 先查祖先，再查自身是否 root
+     *       (避免嵌套浮层如 el-cascader-panel ∈ el-cascader__suggestion-panel 被误判为独立 root)
+     *   3. body 直系浮层根节点 → 匹配浮层类型 → 独立前缀
      *   4. #app 内普通节点 → dynamic
      */
     private processSingleNode;
@@ -314,8 +400,8 @@ declare class TestIdObserver {
     /**
      * 处理浮层内部子节点 (Modal/Drawer/Dropdown 内的按钮、输入框等)
      *
-     * 每个浮层实例独立计数: 以浮层根节点 data-testid 作为隔离 key，
-     * 重复打开相同类型的浮层，子元素 ID 均从 0 重新开始。
+     * 同类型浮层的子节点共享全局计数器 (key: popupType_tag)，
+     * 确保页面上多个同类下拉选择框的下拉选项 testid 全局唯一。
      *
      * ID 格式: ${runtimePagePrefix}${popupPrefix}${tag}_${counter}
      * 例: hall_dynamic_modal_button_0, hall_dynamic_select_div_2
@@ -330,17 +416,19 @@ declare class TestIdObserver {
     /**
      * 获取元素的简化标签名
      *
-     * 处理 Antd 组件前缀: a-button → button, a-input → input
+     * 去除所有适配器注册的 UI 库标签前缀:
+     *   AntD: a-button → button, a-input → input
+     *   Element: el-button → button, el-input → input
      */
     private getSimpleTag;
     /**
      * 判断是否可交互元素
      *
      * 可交互特征:
-     *   - 交互类标签: button, input, select, textarea
+     *   - 匹配任意适配器的交互标签 (含原生 + UI 库前缀)
      *   - onclick 属性
-     *   - role="button" / role="checkbox" / role="radio"
-     *   - cursor:pointer (不检测，因为可能从 CSS 继承，误判率高)
+     *   - role="button" / role="checkbox" / role="radio" / role="switch"
+     *   - tabindex 属性
      */
     private isInteractive;
     /**
@@ -397,4 +485,4 @@ declare class TestIdChecker {
     private static reportGroupDuplicates;
 }
 
-export { INTERACTIVE_TAGS, type ParsedBaseKey, type PopupType, TestIdChecker, type TestIdMarkConfig, TestIdObserver, buildAnchorTestId, buildPopupTestId, defaultConfig, getAnchorCounterMap, getConfig, getNextAnchorLocalIndex, getNextPopupId, getPopupCounterSnapshot, initConfig, mergeConfig, parseBaseKey, resetAllAnchorCounters, resetAllPopupCounters, resetPopupCounter };
+export { type ParsedBaseKey, type PopupType, TestIdChecker, type TestIdMarkConfig, TestIdObserver, type UiAdapter, antdAdapter, buildAnchorTestId, buildPopupTestId, defaultConfig, elementAdapter, getAnchorCounterMap, getConfig, getNextAnchorLocalIndex, getNextPopupId, getPopupCounterSnapshot, initConfig, mergeConfig, parseBaseKey, resetAllAnchorCounters, resetAllPopupCounters, resetPopupCounter };

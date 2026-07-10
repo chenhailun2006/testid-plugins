@@ -20,7 +20,11 @@ export type {
   TestIdMarkConfig,
   PopupType,
 } from './config/testMark';
-export { INTERACTIVE_TAGS } from './config/testMark';
+
+// ── UI 库适配器 ──
+export type { UiAdapter } from './adapters/types';
+export { antdAdapter } from './adapters/antd';
+export { elementAdapter } from './adapters/element';
 
 // ── 锚点计数器 ──
 export {
