@@ -21,9 +21,11 @@ const popupClassSuffixMap: Record<PopupType, string[][]> = {
     ['-calendar-picker-container'],  // Ant Design Vue 1.x
   ],
   popconfirm: [['-popover', '-popconfirm']],
+  popover:    [['-popover']],
   dropdown:   [['-dropdown']],
   tooltip:    [['-tooltip']],
   message:    [['-message']],
+  submenu:    [['-menu-submenu-popup']],
 };
 
 export const antdAdapter: UiAdapter = {
@@ -43,6 +45,13 @@ export const antdAdapter: UiAdapter = {
     'a-checkbox',
     'a-radio',
     'a-switch',
+    'a-menu-item',
+    'a-dropdown-button',
+    'a-tabs-tab-pane',
+    'a-table',
+    'a-tag',
+    'a-card',
+    'a-collapse-panel',
   ],
   tagPrefixPattern: /^a-/,
 };

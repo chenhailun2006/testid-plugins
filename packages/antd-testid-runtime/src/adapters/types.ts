@@ -21,9 +21,11 @@ export type PopupType =
   | 'select'
   | 'datePicker'
   | 'popconfirm'
+  | 'popover'
   | 'dropdown'
   | 'tooltip'
-  | 'message';
+  | 'message'
+  | 'submenu';
 
 // ============================================================
 // 适配器接口

@@ -14,6 +14,7 @@ import About from './views/About.vue';
 import {
   initConfig,
   TestIdObserver,
+  TestIdVuePlugin,
   resetAllAnchorCounters,
   resetAllPopupCounters,
   TestIdChecker,
@@ -53,6 +54,12 @@ const router = createRouter({
 // ── 创建应用 ──
 const app = createApp(App);
 app.use(router);
+
+// ⚠️ 安装 Vue 插件桥接 (必须在 mount 之前)，绕过 UI 库 inheritAttrs: false
+if (import.meta.env.DEV) {
+  app.use(TestIdVuePlugin);
+}
+
 app.mount('#app');
 
 // ── 运行时打标初始化 (仅 DEV) ──

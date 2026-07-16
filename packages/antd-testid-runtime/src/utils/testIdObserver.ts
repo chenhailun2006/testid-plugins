@@ -132,7 +132,7 @@ export class TestIdObserver {
   // ==========================================================
 
   /**
-   * 启动 MutationObserver
+   * 启动 MutationObserver (自动执行全量扫描兜底)
    */
   start(): void {
     if (this.state.isRunning) return;
@@ -147,6 +147,10 @@ export class TestIdObserver {
       subtree: true,   // 监听所有后代节点
     });
     this.state.isRunning = true;
+
+    // Observer 启动时无法捕获已有 DOM，需全量扫描兜底
+    // (解决 start() 执行前已渲染的带 data-test-base-key 节点未被处理的问题)
+    this.fullScan();
   }
 
   /**
@@ -244,8 +248,11 @@ export class TestIdObserver {
   private processSingleNode(node: HTMLElement): void {
     const config = getConfig();
 
-    // 0. 已存在 data-testid → 跳过
-    if (node.hasAttribute('data-testid')) return;
+    // 0. 已存在非空 data-testid → 跳过
+    //    注意: 仅判断非空值。若 UI 库透传了空 data-testid=""，
+    //    应当视为"未注入"继续走后续打标逻辑 (避免误判跳过)。
+    const existingTestId = node.getAttribute('data-testid');
+    if (existingTestId) return;
 
     // 0.1 检查忽略条件
     if (this.shouldIgnore(node, config)) return;
@@ -536,6 +543,7 @@ export class TestIdObserver {
    *   - onclick 属性
    *   - role="button" / role="checkbox" / role="radio" / role="switch"
    *   - tabindex 属性
+   *   - CSS class 匹配 UI 库交互组件 (如 ant-menu-item → 渲染为 <li>，tag 不匹配组件名)
    */
   private isInteractive(node: HTMLElement): boolean {
     const tag = node.tagName.toLowerCase();
@@ -554,6 +562,20 @@ export class TestIdObserver {
 
     // tabindex: 可聚焦即交互
     if (node.hasAttribute('tabindex')) return true;
+
+    // CSS class 兜底: UI 库组件渲染为通用 HTML 标签时 (如 <a-menu-item> → <li class="ant-menu-item">)，
+    // 仅靠 tagName 无法匹配 interactiveTags 中的组件名，需要通过 class 辅助识别。
+    const classStr = node.className;
+    if (typeof classStr === 'string') {
+      // 匹配 Ant Design Vue 常见交互组件的 CSS class
+      if (/\bant-(?:menu-item|menu-submenu|dropdown-menu-item|select-item|tabs-tab|picker-cell|breadcrumb-link)\b/.test(classStr)) {
+        return true;
+      }
+      // 匹配 Element UI 常见交互组件
+      if (/\bel-(?:menu-item|dropdown-menu__item|select-dropdown__item|tabs__item)\b/.test(classStr)) {
+        return true;
+      }
+    }
 
     return false;
   }

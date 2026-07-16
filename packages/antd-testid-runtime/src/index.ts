@@ -50,3 +50,9 @@ export { TestIdObserver } from './utils/testIdObserver';
 
 // ── ID 检测器 ──
 export { TestIdChecker } from './utils/testIdChecker';
+
+// ── Vue 3 插件桥接 (绕过 inheritAttrs: false) ──
+export { TestIdVuePlugin } from './utils/testIdVuePlugin';
+
+// ── Vue 2 插件桥接 (绕过 inheritAttrs: false) ──
+export { TestIdVue2Plugin } from './utils/testIdVue2Plugin';

@@ -26,9 +26,11 @@ const popupCounters: Record<PopupType, number> = {
   select: 0,
   datePicker: 0,
   popconfirm: 0,
+  popover: 0,
   dropdown: 0,
   tooltip: 0,
   message: 0,
+  submenu: 0,
 };
 
 /**

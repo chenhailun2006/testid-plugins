@@ -1,51 +1,78 @@
 /**
- * 模板 AST 转换核心逻辑
+ * 模板 AST 转换核心逻辑 (Vue 2 版)
  *
- * 负责解析 Vue SFC 模板，为 DOM 节点注入 data-testid 或 data-test-base-key。
+ * 负责解析 Vue 2 SFC 模板，为 DOM 节点注入 data-testid 或 data-test-base-key。
  *
  * ┌─ 页面组件 (/views/**) → 直接注入完整 static_xxx data-testid
  * └─ 公共组件 (/components/**, /common/**) → 仅注入 data-test-base-key
  *
- * 与 vite-plugin-auto-testid 共享完全相同的 transform 逻辑。
+ * 与 vite-plugin-auto-testid (Vue 3) 共享相同的计数器架构和 ID 格式，
+ * 但 AST 操作基于 vue-template-compiler（Vue 2）的 AST 结构。
  */
 
-import { parse, type NodeTypes } from '@vue/compiler-dom';
-import type {
-  TemplateChildNode,
-  ElementNode,
-  AttributeNode,
-  DirectiveNode,
-  SimpleExpressionNode,
-  CompoundExpressionNode,
-} from '@vue/compiler-core';
-import type { TransformContext, TransformResult } from './types';
-import { INTERACTIVE_TAGS, FORCE_FULL_TESTID_TAGS, DEFAULT_IGNORE_TAGS, DEFAULT_IGNORE_CLASS } from './types';
 import MagicString from 'magic-string';
+import type { TransformContext, TransformResult } from './types';
+import { INTERACTIVE_TAGS, DEFAULT_IGNORE_TAGS, DEFAULT_IGNORE_CLASS } from './types';
+
+// ============================================================
+// Vue 2 AST 节点类型定义
+// ============================================================
 
 /**
- * 模板属性名常量
+ * Vue 2 模板 AST 元素节点 (vue-template-compiler 编译产物)
+ *
+ * vue-template-compiler 没有 TypeScript 类型声明，
+ * 此处仅定义本插件实际用到的字段。
  */
-const ATTR_TESTID = 'data-testid';
-const ATTR_BASE_KEY = 'data-test-base-key';
+interface ASTElement {
+  type: 1;
+  tag: string;
+  attrsList: { name: string; value: string }[];
+  attrsMap: Record<string, string>;
+  children: ASTNode[];
 
-/**
- * v-if 分支对应的 AST 节点类型
- * 1 = NodeTypes.IF
- * 17 = NodeTypes.IF_BRANCH (v-else-if / v-else)
- */
-const IF_NODE_TYPE = 9;  // NodeTypes.IF
-const IF_BRANCH_NODE_TYPE = 10; // NodeTypes.IF_BRANCH
+  // v-for
+  for?: string;
+  alias?: string;
+  iterator1?: string;
+  forProcessed?: boolean;
 
-/**
- * 递归 AST 检查是否包含 v-if (用于判断是否有条件分支)
- */
-function hasVIf(node: TemplateChildNode): boolean {
-  if (node.type === IF_NODE_TYPE) return true;
-  if ('children' in node && node.children) {
-    return node.children.some(hasVIf);
-  }
-  return false;
+  // v-if / v-else-if / v-else
+  if?: string;
+  ifConditions?: { exp: string | undefined; block: ASTElement }[];
+  else?: true;
+  elseif?: string;
+
+  // :key
+  key?: string;
+
+  // 事件绑定
+  events?: Record<string, { value: string; modifiers?: Record<string, boolean> }>;
+  nativeEvents?: Record<string, { value: string; modifiers?: Record<string, boolean> }>;
+
+  // 动态绑定属性 (v-bind)
+  attrs?: { name: string; value: string; dynamic?: boolean }[];
+  hasBindings?: boolean;
+
+  // class
+  staticClass?: string;
+  classBinding?: string;
+
+  // 源码位置 (需 compile(outputSourceRange: true))
+  start?: number;
+  end?: number;
+  // vue-template-compiler 的 loc 属性
+  rawAttrsMap?: Record<string, { name: string; value: string; start: number; end: number }>;
 }
+
+/** Vue 2 模板 AST 节点类型联合 */
+type ASTNode = ASTElement | { type: 2 | 3; text?: string; expression?: string };
+
+// ============================================================
+// 属性名常量
+// ============================================================
+
+const ATTR_TESTID = 'data-testid';
 
 // ============================================================
 // 路径提取工具
@@ -57,7 +84,6 @@ function hasVIf(node: TemplateChildNode): boolean {
  *     /src/views/user/Profile.vue → user_Profile
  */
 function extractPageName(filename: string): string {
-  // 标准化路径分隔符
   const normalized = filename.replace(/\\/g, '/');
   const match = normalized.match(/\/views\/(.+?)(?:\/index)?\.vue$/);
   if (!match) return 'unknown';
@@ -82,11 +108,7 @@ function extractCompName(filename: string): string {
  * 生成页面组件 testid
  * 格式: ${prefix}page_${pageName}_comp_${compName}_tag_${tagName}_${index}
  */
-function generateViewTestId(
-  ctx: TransformContext,
-  tag: string,
-  index: number
-): string {
+function generateViewTestId(ctx: TransformContext, tag: string, index: number): string {
   const pageName = extractPageName(ctx.filename);
   const compName = extractCompName(ctx.filename);
   return `${ctx.compilePrefix}page_${pageName}_comp_${compName}_tag_${tag}_${index}`;
@@ -97,11 +119,7 @@ function generateViewTestId(
  * 格式: common_comp_${compName}_tag_${tagName}_${index}
  * 运行时: Observer 通过锚点定位拼接最终 testid
  */
-function generateCommonBaseKey(
-  ctx: TransformContext,
-  tag: string,
-  index: number
-): string {
+function generateCommonBaseKey(ctx: TransformContext, tag: string, index: number): string {
   const compName = extractCompName(ctx.filename);
   return `common_comp_${compName}_tag_${tag}_${index}`;
 }
@@ -113,73 +131,58 @@ function generateCommonBaseKey(
 /**
  * 检查节点是否已有手动 data-testid
  */
-function hasManualTestId(node: ElementNode): boolean {
-  return node.props.some((prop) => {
-    if (prop.type === 6) {
-      // 静态属性 (NodeTypes.ATTRIBUTE)
-      return (prop as AttributeNode).name === ATTR_TESTID;
-    }
-    if (prop.type === 7) {
-      // 指令 (NodeTypes.DIRECTIVE)
-      const dir = prop as DirectiveNode;
-      if (dir.name === 'bind' && dir.arg?.type === 4) {
-        const arg = dir.arg as SimpleExpressionNode;
-        return arg.content === ATTR_TESTID;
-      }
-    }
-    return false;
-  });
+function hasManualTestId(node: ASTElement): boolean {
+  // 检查静态属性
+  if (node.attrsMap && node.attrsMap[ATTR_TESTID]) return true;
+  // 检查动态绑定 (v-bind:data-testid 或 :data-testid)
+  if (node.attrs) {
+    return node.attrs.some((a) => a.name === ATTR_TESTID);
+  }
+  return false;
 }
 
 /**
  * 判断节点是否为交互元素
  */
-function isInteractiveElement(node: ElementNode): boolean {
+function isInteractiveElement(node: ASTElement): boolean {
   const tag = node.tag.toLowerCase();
 
   // 白名单
   if (INTERACTIVE_TAGS.has(tag)) return true;
 
-  // 检查 clickable 属性
-  return node.props.some((prop) => {
-    if (prop.type === 6) {
-      const attr = prop as AttributeNode;
-      return attr.name === 'onclick';
+  // 检查事件绑定
+  if (node.events) {
+    const eventNames = Object.keys(node.events);
+    if (eventNames.some((name) => ['click', 'input', 'change', 'submit', 'keydown', 'keyup'].includes(name))) {
+      return true;
     }
-    if (prop.type === 7) {
-      const dir = prop as DirectiveNode;
-      if (dir.name === 'on') {
-        // @click, @input 等
-        if (dir.arg?.type === 4) {
-          const arg = dir.arg as SimpleExpressionNode;
-          return ['click', 'input', 'change', 'submit', 'keydown', 'keyup'].includes(arg.content);
-        }
-      }
+  }
+
+  // 检查原生事件 (.native 修饰符)
+  if (node.nativeEvents) {
+    const nativeEventNames = Object.keys(node.nativeEvents);
+    if (nativeEventNames.some((name) => ['click', 'input', 'change', 'submit', 'keydown', 'keyup'].includes(name))) {
+      return true;
     }
-    return false;
-  });
+  }
+
+  return false;
 }
 
 /**
  * 检查节点是否包含忽略 class
  */
-function hasIgnoreClass(node: ElementNode, ignoreClass: string[]): boolean {
+function hasIgnoreClass(node: ASTElement, ignoreClass: string[]): boolean {
   if (ignoreClass.length === 0) return false;
 
-  const classAttr = node.props.find(
-    (p): p is AttributeNode =>
-      p.type === 6 && (p as AttributeNode).name === 'class'
-  );
-  if (!classAttr) return false;
-
-  const classValue = classAttr.value?.content || '';
-  return ignoreClass.some((cls) => classValue.includes(cls));
+  const classStr = (node.staticClass || '') + (node.classBinding ? ' ' + node.classBinding : '');
+  return ignoreClass.some((cls) => classStr.includes(cls));
 }
 
 /**
  * 是否应跳过该节点
  */
-function shouldSkipNode(node: ElementNode, ctx: TransformContext): boolean {
+function shouldSkipNode(node: ASTElement, ctx: TransformContext): boolean {
   if (hasManualTestId(node)) return true;
   if (ctx.ignoreTags.includes(node.tag.toLowerCase())) return true;
   if (hasIgnoreClass(node, ctx.ignoreClass)) return true;
@@ -188,17 +191,11 @@ function shouldSkipNode(node: ElementNode, ctx: TransformContext): boolean {
 }
 
 /**
- * 计算是否注入 base-key（而非完整 data-testid）
- *
- * 默认规则：公共组件 (!isViewComponent) 注入 base-key，页面组件注入完整 testid。
- *
- * 例外：若节点标签属于 FORCE_FULL_TESTID_TAGS（被父组件托管渲染的交互组件，
- * 如 a-menu-item），即使公共组件也强制注入完整 data-testid，
- * 使其随 $attrs 进入目标 DOM 的 vnode，避免被父组件重渲染抹除。
+ * 获取简化标签名 (去掉 UI 库前缀)
+ * 例: a-button → button, el-input → input, van-checkbox → checkbox
  */
-function shouldUseBaseKey(el: ElementNode, isViewComponent: boolean): boolean {
-  if (FORCE_FULL_TESTID_TAGS.has(el.tag.toLowerCase())) return false;
-  return !isViewComponent;
+function getSimpleTag(el: ASTElement): string {
+  return el.tag.toLowerCase().replace(/^(a-|el-|van-)/, '');
 }
 
 // ============================================================
@@ -206,53 +203,33 @@ function shouldUseBaseKey(el: ElementNode, isViewComponent: boolean): boolean {
 // ============================================================
 
 /**
- * 从 v-for 指令中提取 key 表达式 (简单情况)
- * 返回: { hasStableKey, keyExpr }
+ * 解析 v-for 指令信息
+ *
+ * Vue 2 AST 的 v-for 信息存储在元素的直接字段上：
+ *   - node.for   : 迭代源表达式 (如 "list")
+ *   - node.alias : 循环项别名 (如 "item")
+ *   - node.iterator1 : 索引别名 (如 "index" / "i")
+ *   - node.key   : :key 的值 (如 "item.id")
  */
-function parseVForDirective(node: ElementNode): { hasStableKey: boolean; keyExpr: string | null; indexBinding: string | null } {
-  const forDir = node.props.find(
-    (p): p is DirectiveNode =>
-      p.type === 7 &&
-      (p as DirectiveNode).name === 'for'
-  ) as DirectiveNode | undefined;
-
-  if (!forDir) return { hasStableKey: false, keyExpr: null, indexBinding: null };
-
-  const exp = forDir.exp as SimpleExpressionNode | undefined;
-  if (!exp) return { hasStableKey: false, keyExpr: null, indexBinding: null };
-
-  // v-for="(item, index) in list" 或 v-for="item in list"
-  const source = exp.content.trim();
-
-  // 检测是否有 index 别名
-  // 模式: (item, index) in ... 或 (item, i) in ...
-  const withIndexMatch = source.match(/\(\s*(\w+)\s*,\s*(\w+)\s*\)/);
-  let indexBinding: string | null = null;
-  if (withIndexMatch) {
-    indexBinding = withIndexMatch[2];
+function parseVForDirective(
+  node: ASTElement
+): { hasStableKey: boolean; keyExpr: string | null; indexBinding: string | null } {
+  if (!node.for) {
+    return { hasStableKey: false, keyExpr: null, indexBinding: null };
   }
 
-  // 检测 item.id 作为稳定 key
-  const keyDir = node.props.find(
-    (p): p is DirectiveNode =>
-      p.type === 7 &&
-      (p as DirectiveNode).name === 'bind' &&
-      (p as DirectiveNode).arg?.type === 4 &&
-      ((p as DirectiveNode).arg as SimpleExpressionNode).content === 'key'
-  ) as DirectiveNode | undefined;
+  const indexBinding = node.iterator1 || null;
 
   let hasStableKey = false;
   let keyExpr: string | null = null;
 
-  if (keyDir?.exp) {
-    const keyExp = keyDir.exp as SimpleExpressionNode | CompoundExpressionNode;
-    if ('content' in keyExp) {
-      // 稳定 key: :key="item.id" 或 :key="item.code"
-      const content = (keyExp as SimpleExpressionNode).content.trim();
-      if (content.includes('item.') && !content.includes('index')) {
-        hasStableKey = true;
-        keyExpr = content;
-      }
+  if (node.key) {
+    const keyContent = node.key.trim();
+    const indexVar = node.iterator1 || '';
+    // 稳定 key: :key="item.id" — 包含 item.xxx 且不依赖 index
+    if (keyContent.includes('item.') && !keyContent.includes('index') && !(indexVar && keyContent.includes(indexVar))) {
+      hasStableKey = true;
+      keyExpr = keyContent;
     }
   }
 
@@ -264,57 +241,48 @@ function parseVForDirective(node: ElementNode): { hasStableKey: boolean; keyExpr
 // ============================================================
 
 /**
- * 遍历 AST 并收集需要注入 testid 的节点信息
- *
- * 返回需要修改的位置列表: { node, testId, isBaseKey }
+ * 注入信息
  */
 interface InjectInfo {
-  node: ElementNode;
+  node: ASTElement;
   testId: string;
   isBaseKey: boolean;
-  isDynamic: boolean;         // 是否动态绑定 (:data-testid)
+  isDynamic: boolean; // 是否动态绑定 (:data-testid)
 }
 
 /**
- * 遍历节点树，收集打标信息
+ * 递归遍历 AST 节点树，收集需要注入 testid 的节点信息
  */
 function collectInjections(
-  node: TemplateChildNode,
+  node: ASTNode,
   ctx: TransformContext,
   result: InjectInfo[],
   parentTestId?: string,
   branchCounter?: { current: number }
 ): void {
-  // 只处理元素节点
-  if (node.type !== 1) {
-    // ElementNode.type === 1
-    // 递归处理子节点 (如 v-for 的 TemplateLiteral)
-    if ('children' in node && node.children) {
-      node.children.forEach((child) =>
-        collectInjections(child, ctx, result, parentTestId, branchCounter)
-      );
-    }
+  // 只处理元素节点 (type === 1)
+  if (!node || node.type !== 1) {
     return;
   }
 
-  const el = node as ElementNode;
+  const el = node as ASTElement;
+
+  // ── 跳过 v-else / v-else-if 节点（由 v-if 主节点的 ifConditions 统一处理）──
+  if (el.else || el.elseif) {
+    return;
+  }
 
   // ============================================================
-  // 1. 处理 v-for (优先级最高，即使 onlyInteractive 也需打标)
-  //    因为 v-for 产生重复的 DOM 结构，E2E 测试必须能区分每一项
+  // 1. 处理 v-for (优先级最高)
   // ============================================================
-  const forDir = el.props.find(
-    (p): p is DirectiveNode =>
-      p.type === 7 && (p as DirectiveNode).name === 'for'
-  ) as DirectiveNode | undefined;
+  if (el.for && !el.forProcessed) {
+    el.forProcessed = true;
 
-  if (forDir) {
-    // 获取简化标签名 (a-button → button)
-    const forTag = el.tag.toLowerCase().replace(/^a-/, '');
+    const forTag = getSimpleTag(el);
     const { hasStableKey, keyExpr, indexBinding } = parseVForDirective(el);
 
     if (hasStableKey && keyExpr) {
-      // 情况 A: 有稳定 key — 编译注入动态 :data-testid (或 :data-test-base-key)
+      // 情况 A: 有稳定 key — 编译注入动态 :data-testid
       const baseKey = ctx.isViewComponent
         ? generateViewTestId(ctx, forTag, ctx.counter)
         : generateCommonBaseKey(ctx, forTag, ctx.counter);
@@ -323,7 +291,7 @@ function collectInjections(
       result.push({
         node: el,
         testId: `\`${baseKey}_key_\${${keyExpr}}\``,
-        isBaseKey: shouldUseBaseKey(el, ctx.isViewComponent),
+        isBaseKey: false, // 动态绑定已含稳定 key，不需运行时转换
         isDynamic: true,
       });
     } else if (indexBinding) {
@@ -336,12 +304,11 @@ function collectInjections(
       result.push({
         node: el,
         testId: `\`${testId}-\${${indexBinding}}\``,
-        isBaseKey: shouldUseBaseKey(el, ctx.isViewComponent),
+        isBaseKey: false, // 动态 testid 含 index 后缀，不需运行时转换
         isDynamic: true,
       });
-    }
-    // 情况 C: 无稳定 key — 外层打标，内部跳过
-    else {
+    } else {
+      // 情况 C: 无稳定 key — 静态打标，子节点交运行时处理
       const testId = ctx.isViewComponent
         ? generateViewTestId(ctx, forTag, ctx.counter)
         : generateCommonBaseKey(ctx, forTag, ctx.counter);
@@ -350,7 +317,7 @@ function collectInjections(
       result.push({
         node: el,
         testId,
-        isBaseKey: shouldUseBaseKey(el, ctx.isViewComponent),
+        isBaseKey: !ctx.isViewComponent,
         isDynamic: false,
       });
     }
@@ -360,17 +327,13 @@ function collectInjections(
   }
 
   // ============================================================
-  // 2. 跳过不需要打标的节点
+  // 2. 跳过不需要打标的节点 (但继续递归子节点)
   // ============================================================
   if (shouldSkipNode(el, ctx)) {
-    // 如果已有手动 testid，可以用作子节点的锚点，继续递归子节点
-    const manualId = el.props.find(
-      (p): p is AttributeNode =>
-        p.type === 6 && (p as AttributeNode).name === ATTR_TESTID
-    ) as AttributeNode | undefined;
-
-    const anchorId = manualId?.value?.content || parentTestId;
-    if ('children' in el && el.children) {
+    // 如果节点已有手动 data-testid，可作为子节点的锚点
+    const manualId = el.attrsMap ? el.attrsMap[ATTR_TESTID] : undefined;
+    const anchorId = manualId || parentTestId;
+    if (el.children) {
       el.children.forEach((child) =>
         collectInjections(child, ctx, result, anchorId, branchCounter)
       );
@@ -378,14 +341,14 @@ function collectInjections(
     return;
   }
 
-  // 获取简化标签名 (a-button → button)
-  const tag = el.tag.toLowerCase().replace(/^a-/, '');
+  // 获取简化标签名
+  const tag = getSimpleTag(el);
 
   // ============================================================
-  // 3. 处理 v-if 分支
+  // 3. 处理 v-if 条件块
   // ============================================================
-  if (node.type === IF_NODE_TYPE || node.type === IF_BRANCH_NODE_TYPE) {
-    // v-if 条件块：外层容器编译打标，使用独立子计数器
+  if (el.if) {
+    // v-if 主节点：外层容器注入 testid，使用独立子计数器
     const containerTestId = ctx.isViewComponent
       ? generateViewTestId(ctx, tag, ctx.counter)
       : generateCommonBaseKey(ctx, tag, ctx.counter);
@@ -394,16 +357,22 @@ function collectInjections(
     result.push({
       node: el,
       testId: containerTestId,
-      isBaseKey: shouldUseBaseKey(el, ctx.isViewComponent),
+      isBaseKey: !ctx.isViewComponent,
       isDynamic: false,
     });
 
-    // 子节点使用独立子计数器 (branchCounter)
-    const subCounter = { current: 0 };
-    if ('children' in el && el.children) {
-      el.children.forEach((child) =>
-        collectInjections(child, ctx, result, containerTestId, subCounter)
-      );
+    // 遍历所有 v-if / v-else-if / v-else 分支
+    // ifConditions[0] = v-if, ifConditions[1] = v-else-if, ifConditions[2] = v-else
+    if (el.ifConditions) {
+      for (const condition of el.ifConditions) {
+        const subCounter = { current: 0 };
+        const branch = condition.block;
+        if (branch && branch.children) {
+          branch.children.forEach((child) =>
+            collectInjections(child, ctx, result, containerTestId, subCounter)
+          );
+        }
+      }
     }
     return;
   }
@@ -413,27 +382,32 @@ function collectInjections(
   // ============================================================
   let testId: string;
 
+  let isBaseKey: boolean;
+
   if (branchCounter && parentTestId) {
-    // 处于 v-if 分支中: 使用 {parentTestId}__{tag}-{n} 格式
+    // 处于 v-if / v-show 分支中: {parentTestId}__{tag}-{n}
+    // 子元素 testid 已通过父锚点 + 局部计数器实现稳定，无需运行时转换
     testId = `${parentTestId}__${tag}-${branchCounter.current}`;
     branchCounter.current++;
+    isBaseKey = false; // v-if 子元素已在编译期确定，不需运行时锚点定位
   } else {
-    // 正常元素
+    // 普通节点
     testId = ctx.isViewComponent
       ? generateViewTestId(ctx, tag, ctx.counter)
       : generateCommonBaseKey(ctx, tag, ctx.counter);
     ctx.counter++;
+    isBaseKey = !ctx.isViewComponent;
   }
 
   result.push({
     node: el,
     testId,
-    isBaseKey: shouldUseBaseKey(el, ctx.isViewComponent),
+    isBaseKey,
     isDynamic: false,
   });
 
   // 递归处理子节点
-  if ('children' in el && el.children) {
+  if (el.children) {
     el.children.forEach((child) =>
       collectInjections(child, ctx, result, testId, branchCounter)
     );
@@ -447,25 +421,38 @@ function collectInjections(
 /**
  * 查找开标签结束位置
  *
- * 利用 Vue AST 已解析的属性位置信息：
- *   - 从最后一个属性的 loc.end.offset 之后开始扫描
+ * 利用 Vue 2 AST 已解析的属性位置信息 (rawAttrsMap)：
+ *   - 从最后一个属性的 end 位置之后开始扫描
  *   - 属性与 '>' / '/>' 之间仅有空白字符
  *   - 彻底避开反引号、表达式中的 '>' 操作符等误判
  *
  * 返回标签结束符的位置和是否自闭合。
  */
 function findOpeningTagEnd(
-  element: ElementNode,
+  element: ASTElement,
   template: string
 ): { pos: number; isSelfClose: boolean } {
   // 确定扫描起点：最后一个属性结束位置，或标签名之后
   let scanFrom: number;
-  if (element.props.length > 0) {
-    const lastProp = element.props[element.props.length - 1];
-    scanFrom = lastProp.loc.end.offset;
-  } else {
+  const attrsList = element.attrsList || [];
+  const rawAttrsMap = element.rawAttrsMap || {};
+
+  if (attrsList.length > 0 && element.start !== undefined) {
+    // 遍历所有属性，找到最远的 end 位置
+    let maxEnd = element.start + 1 + element.tag.length; // 至少从 <tagname 之后开始
+    for (const attr of attrsList) {
+      const posInfo = rawAttrsMap[attr.name];
+      if (posInfo && posInfo.end > maxEnd) {
+        maxEnd = posInfo.end;
+      }
+    }
+    scanFrom = maxEnd;
+  } else if (element.start !== undefined) {
     // <tagname ... — 属性不存在时从标签名后开始
-    scanFrom = element.loc.start.offset + 1 + element.tag.length;
+    scanFrom = element.start + 1 + element.tag.length;
+  } else {
+    // start 不存在 (异常情况)，跳过
+    return { pos: 0, isSelfClose: false };
   }
 
   // 从扫描起点向后，仅跳过空白，找到 '>' 或 '/>'
@@ -499,7 +486,8 @@ function findOpeningTagEnd(
 /**
  * 将 InjectInfo 列表应用到模板源代码，生成新的模板字符串
  *
- * 原理: 使用 MagicString 在元素开标签结束符 '>' 或 '/>' 前插入属性
+ * 使用 MagicString 在元素开标签结束符 '>' 或 '/>' 前插入属性。
+ * vue-template-compiler 的 AST 节点 start 指向 '<' 的位置。
  */
 function applyInjections(template: string, injections: InjectInfo[]): string {
   if (injections.length === 0) return template;
@@ -507,20 +495,18 @@ function applyInjections(template: string, injections: InjectInfo[]): string {
   const s = new MagicString(template);
 
   for (const info of injections) {
-    // 使用 AST 节点的属性信息精确定位 '>' 位置
+    // 使用 AST 节点的属性位置信息精确定位 '>' 位置
     const { pos: gtPos } = findOpeningTagEnd(info.node, template);
 
-    // 注入属性，前面加一个空格
+    // 在 '>' 或 '/>' 前插入属性
     let attrStr: string;
     if (info.isDynamic) {
-      // 动态绑定 :data-testid 或 :data-test-base-key
       if (info.isBaseKey) {
         attrStr = ` :data-test-base-key="${info.testId}"`;
       } else {
         attrStr = ` :data-testid="${info.testId}"`;
       }
     } else {
-      // 静态属性
       if (info.isBaseKey) {
         attrStr = ` data-test-base-key="${info.testId}"`;
       } else {
@@ -528,7 +514,7 @@ function applyInjections(template: string, injections: InjectInfo[]): string {
       }
     }
 
-    // 在 '>' 或 '/>' 前插入
+    // 在 '>' 或 '/>' 前插入属性
     s.appendLeft(gtPos, attrStr);
   }
 
@@ -539,6 +525,9 @@ function applyInjections(template: string, injections: InjectInfo[]): string {
 // 主入口
 // ============================================================
 
+/**
+ * transformTemplate 的选项
+ */
 export interface TransformOptions {
   isViewComponent: boolean;
   compilePrefix?: string;
@@ -549,15 +538,19 @@ export interface TransformOptions {
 }
 
 /**
- * 转换 Vue 模板，自动注入 testid 属性
+ * 转换 Vue 2 模板，自动注入 testid 属性
+ *
+ * 使用 vue-template-compiler 将模板解析为 AST，
+ * 遍历收集需要打标的节点，最后用 MagicString 在源码中插入属性。
  *
  * @param templateContent - <template> 部分源代码
  * @param options - 转换选项
- * @returns 转换结果 (code + map)
+ * @returns 转换结果 { code } 或 null (无变化)
  */
 export function transformTemplate(
   templateContent: string,
-  options: TransformOptions
+  options: TransformOptions,
+  compiler: any // vue-template-compiler 实例，从 loader 传入
 ): TransformResult | null {
   const {
     isViewComponent,
@@ -568,19 +561,22 @@ export function transformTemplate(
     onlyInteractive = true,
   } = options;
 
-  // 解析模板为 AST
-  let ast: ReturnType<typeof parse>;
+  // ── 解析模板为 AST ──
+  let ast: any;
   try {
-    ast = parse(templateContent, {
-      comments: true,
-      getTextMode: () => 0, // DATA 模式
+    const compiled = compiler.compile(templateContent, {
+      outputSourceRange: true,
+      // 只关心 AST，不需要生成 render 函数 (但 vue-template-compiler 始终会生成)
     });
+    ast = compiled.ast;
   } catch {
     // 解析失败 (非标准模板语法)，静默返回
     return null;
   }
 
-  // 创建转换上下文
+  if (!ast) return null;
+
+  // ── 创建转换上下文 ──
   const ctx: TransformContext = {
     isViewComponent,
     compilePrefix,
@@ -592,15 +588,18 @@ export function transformTemplate(
     onlyInteractive,
   };
 
-  // 收集需要注入的信息
+  // ── 收集需要注入的信息 ──
+  // Vue 2 AST 根节点 type === 0 (Root)，children 包含顶层节点
   const injections: InjectInfo[] = [];
-  ast.children.forEach((child) => {
-    collectInjections(child, ctx, injections);
-  });
+  if (ast.children) {
+    ast.children.forEach((child: ASTNode) => {
+      collectInjections(child, ctx, injections);
+    });
+  }
 
   if (injections.length === 0) return null;
 
-  // 应用注入，生成新代码
+  // ── 应用注入，生成新代码 ──
   const newCode = applyInjections(templateContent, injections);
 
   if (newCode === templateContent) return null;

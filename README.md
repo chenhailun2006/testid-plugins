@@ -1,6 +1,6 @@
 # testid-plugins
 
-全自动 DOM 打标 `data-testid` 工具 — Vue 3 + Vite + Ant Design Vue
+全自动 DOM 打标 `data-testid` 工具 — 支持 Vue 2/3 + Vite/Webpack + Ant Design Vue / Element UI
 
 ## 项目结构
 
@@ -12,12 +12,17 @@ testid-plugins/
 │   │       ├── index.ts           # 插件入口
 │   │       ├── transform.ts       # 模板 AST 转换核心
 │   │       └── types.ts           # 类型定义
-│   ├── @testid/webpack-plugin-auto-testid/  # Webpack 编译期打标 Loader
+│   ├── @testid/webpack-plugin-auto-testid/       # Webpack 编译期打标 Loader (Vue 3)
 │   │   └── src/
 │   │       ├── index.ts           # Loader 入口
 │   │       ├── transform.ts       # 模板 AST 转换核心 (与 Vite 版一致)
 │   │       └── types.ts           # 类型定义
-│   └── @testid/antd-testid-runtime/         # 运行时兜底打标模块
+│   ├── @testid/webpack-plugin-vue2-auto-testid/  # Webpack 编译期打标 Loader (Vue 2)
+│   │   └── src/
+│   │       ├── index.ts           # Loader 入口 (vue-template-compiler)
+│   │       ├── transform.ts       # Vue 2 AST 变换核心
+│   │       └── types.ts           # 类型定义
+│   └── @testid/antd-testid-runtime/              # 运行时兜底打标模块
 │       └── src/
 │           ├── index.ts           # 统一导出入口
 │           ├── config/
@@ -43,10 +48,12 @@ testid-plugins/
 │ 仅 DEV 环境加载运行时所有模块                │
 ├──────────────────┬──────────────────────────┤
 │ 编译期            │ 运行时                    │
-│ vite-plugin-auto- │ testIdAnchorCounter      │
-│ testid            │ testIdPopupCounter       │
+│ vite-plugin-      │ testIdAnchorCounter      │
+│ auto-testid       │ testIdPopupCounter       │
 │ webpack-plugin-   │ testIdObserver           │
 │ auto-testid       │ testIdChecker            │
+│ webpack-plugin-   │                          │
+│ vue2-auto-testid  │                          │
 │ (Vue SFC AST)     │                          │
 ├──────────────────┴──────────────────────────┤
 │ 配置层: testMark.ts                         │

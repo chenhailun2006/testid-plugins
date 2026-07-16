@@ -46,9 +46,11 @@ const GROUP_LABELS: Record<CheckGroup, string> = {
   select: '[Select 浮层]',
   datePicker: '[DatePicker 浮层]',
   popconfirm: '[Popconfirm 浮层]',
+  popover: '[Popover 浮层]',
   dropdown: '[Dropdown 浮层]',
   tooltip: '[Tooltip 浮层]',
   message: '[Message 浮层]',
+  submenu: '[SubMenu 浮层]',
 };
 
 /**
@@ -66,9 +68,11 @@ const GROUP_SUGGESTIONS: Record<CheckGroup, string> = {
   select: 'Select 独立计数器自增逻辑失效',
   datePicker: 'DatePicker 独立计数器自增逻辑失效',
   popconfirm: 'Popconfirm 独立计数器自增逻辑失效',
+  popover: 'Popover 独立计数器自增逻辑失效',
   dropdown: 'Dropdown 独立计数器自增逻辑失效',
   tooltip: 'Tooltip 独立计数器自增逻辑失效',
   message: 'Message 独立计数器自增逻辑失效',
+  submenu: 'SubMenu 独立计数器自增逻辑失效',
 };
 
 // ============================================================
@@ -196,7 +200,7 @@ export class TestIdChecker {
     // 浮层前缀检测
     const popupTypes: PopupType[] = [
       'modal', 'drawer', 'select', 'datePicker',
-      'popconfirm', 'dropdown', 'tooltip', 'message',
+      'popconfirm', 'popover', 'dropdown', 'tooltip', 'message', 'submenu',
     ];
     for (const type of popupTypes) {
       if (prefix === `${type}_`) return type;

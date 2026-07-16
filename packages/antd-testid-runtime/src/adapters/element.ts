@@ -28,12 +28,11 @@ const popupClassSuffixMap: Record<PopupType, string[][]> = {
     ['-message-box'],    // Element MessageBox
     ['-popconfirm'],     // Element Popconfirm
   ],
+  popover:    [['-popover']],
   dropdown:   [['-dropdown-menu']],
-  tooltip:    [
-    ['-tooltip__popper'],  // Element Tooltip 浮层
-    ['-popover'],          // Element Popover 浮层 (语义上接近 tooltip)
-  ],
+  tooltip:    [['-tooltip__popper']],
   message:    [['-message']],
+  submenu:    [],
 };
 
 export const elementAdapter: UiAdapter = {

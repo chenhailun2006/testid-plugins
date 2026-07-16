@@ -102,6 +102,34 @@ export const INTERACTIVE_TAGS = new Set([
   'a-checkbox',
   'a-radio',
   'a-switch',
+  'a-menu-item',
+  'a-dropdown-button',
+  'a-tabs-tab-pane',
+  'a-table',
+  'a-tag',
+  'a-card',
+  'a-collapse-panel',
+]);
+
+/**
+ * 强制注入完整 data-testid（不走 base-key）的组件标签集合
+ *
+ * 这些组件（如 Ant Design Vue 的 a-menu-item / a-sub-menu、Element 的 el-menu-item）
+ * 在渲染时，其最终 DOM（如 <li class="ant-menu-item">）由**父组件内部 render 函数**
+ * 创建并托管 vnode，而非自身组件实例。
+ *
+ * 若编译期仅注入 data-test-base-key，运行时锚点解析出的 data-testid 只存在于 DOM、
+ * 不在 vnode 中，会被父组件的重渲染（selectedKeys / hover / 数据更新）抹除，
+ * 导致 base-key 残留、data-testid 丢失（典型表现：submenu 子项能注入，
+ * 但 a-menu 直接子级 a-menu-item 只有 data-test-base-key）。
+ *
+ * 强制注入完整 data-testid 可让其随 $attrs 透传到目标 DOM 的 vnode 中，
+ * 父组件重渲染时由 Vue 自行保留，彻底解决丢失问题。
+ */
+export const FORCE_FULL_TESTID_TAGS = new Set([
+  'a-menu-item',
+  'a-sub-menu',
+  'el-menu-item',
 ]);
 
 /**

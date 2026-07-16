@@ -1,19 +1,26 @@
-# @testid/webpack-plugin-auto-testid
+# @testid/webpack-plugin-vue2-auto-testid
 
-Webpack 编译期 Loader — 解析 Vue SFC 模板 AST，自动为 DOM 节点注入 `data-testid` / `data-test-base-key` 属性。
+Vue 2 + Webpack 编译期 Loader — 解析 Vue 2 SFC 模板 AST，自动为 DOM 节点注入 `data-testid` / `data-test-base-key` 属性。
 
-与 [@testid/vite-plugin-auto-testid](../vite-plugin-auto-testid/) 功能完全对齐，核心 transform 逻辑共享。
+基于 `vue-template-compiler` 解析模板，与 Vue 3 版 [webpack-plugin-auto-testid](../webpack-plugin-auto-testid/) 功能完全对齐，共享相同的三层计数器架构和 ID 格式规范。
 
 ## 功能概述
 
 - **页面组件** (`/views/**`) → 直接注入完整 `static_xxx` `data-testid`
 - **公共组件** (`/components/**`, `/common/**`) → 仅注入 `data-test-base-key`，运行时由 Observer 锚点定位拼接最终 testid
 - **仅开发模式生效** — `NODE_ENV=production` 时跳过所有处理，零构建产物开销
+- **Vue 2 专用** — 使用 `vue-template-compiler` 解析模板，需与项目中 Vue 版本一致
+
+## 前置依赖
+
+- `vue@^2.0.0` — Vue 2 项目
+- `vue-template-compiler` — 必须与 Vue 版本一致（如 `vue@2.7.16` → `vue-template-compiler@2.7.16`），通常已随项目安装
+- `webpack@^4.0.0 || ^5.0.0`
 
 ## 安装
 
 ```bash
-pnpm add -D @testid/webpack-plugin-auto-testid
+pnpm add -D @testid/webpack-plugin-vue2-auto-testid
 ```
 
 ## 快速开始
@@ -27,11 +34,11 @@ Vue CLI 项目中通过 `vue.config.js` 配置 webpack loader：
 module.exports = {
   chainWebpack: (config) => {
     config.module
-      .rule('vue-testid')
+      .rule('vue2-testid')
       .test(/\.vue$/)
       .enforce('pre') // 在 vue-loader 之前执行，确保模板在编译前已注入 testid
       .use('testid-loader')
-      .loader('@testid/webpack-plugin-auto-testid')
+      .loader('@testid/webpack-plugin-vue2-auto-testid')
       .options({
         viewPatterns: ['/views/'],
         commonPatterns: ['/components/', '/common/'],
@@ -53,7 +60,7 @@ module.exports = {
 >       test: /\.vue$/,
 >       enforce: 'pre',
 >       use: [{
->         loader: '@testid/webpack-plugin-auto-testid',
+>         loader: '@testid/webpack-plugin-vue2-auto-testid',
 >         options: { /* ... */ },
 >       }],
 >     }],
@@ -96,7 +103,7 @@ if (process.env.NODE_ENV !== 'production') {
 | `commonPatterns` | `string[]` | `['/components/', '/common/']` | 公共组件的路径匹配模式 |
 | `globalPrefix` | `string` | `''` | 全局前缀，自动拼接到 `compilePrefix` 前，如 `"hall"` → `hall_static_` |
 | `compilePrefix` | `string` | `'static_'` | 编译期静态节点前缀 |
-| `ignoreTags` | `string[]` | `['script','style','svg','br','iframe']` | 跳过不打标的 HTML 标签 |
+| `ignoreTags` | `string[]` | `['script','style','svg','br','hr','iframe','template']` | 跳过不打标的 HTML 标签 |
 | `ignoreClass` | `string[]` | `['no-test-mark','hidden']` | 包含此 class 的元素跳过打标 |
 | `onlyInteractive` | `boolean` | `true` | 仅给可交互控件（button/input/select 等）打标 |
 
@@ -125,16 +132,28 @@ if (process.env.NODE_ENV !== 'production') {
 | 公共组件 | `common_comp_{compName}_tag_{tag}_{index}` (base-key) | `common_comp_BaseSearch_tag_button_0` |
 | v-for 动态 | `` `{prefix}...-\${index}` `` | `` `hall_static_page_list_comp_index_tag_div_3-${i}` `` |
 
-## 与 Vite 版对比
+## 与 Vue 3 版对比
 
-| | vite-plugin-auto-testid | webpack-plugin-auto-testid |
+| | webpack-plugin-auto-testid | webpack-plugin-vue2-auto-testid |
 | --- | --- | --- |
-| 构建工具 | Vite 5+ | Webpack 5+ |
-| 入口机制 | Vite `transform` hook | Webpack Loader |
-| 文件路径 | `transform(code, id)` 的 `id` | `this.resourcePath` |
-| 选项获取 | 函数参数 | `this.getOptions()` |
-| `enforce` | 插件选项 `enforce: 'pre'` | webpack config `enforce: 'pre'` |
-| 核心逻辑 | `transform.ts` | 相同的 `transform.ts` |
+| Vue 版本 | Vue 3 | Vue 2 |
+| 模板编译器 | `@vue/compiler-sfc` + `@vue/compiler-dom` | `vue-template-compiler` |
+| SFC 解析 | `@vue/compiler-sfc`.`parse()` | `vue-template-compiler`.`parseComponent()` |
+| AST 结构 | Vue 3 AST (Unified Props) | Vue 2 AST (Separated Fields) |
+| 构建工具 | Webpack 5+ | Webpack 4+ / 5+ |
+| 计数器架构 | 三层计数器 | 相同（复用） |
+| ID 格式 | 相同 | 相同 |
+
+### 关键 AST 差异
+
+| 特性 | Vue 3 AST | Vue 2 AST |
+| --- | --- | --- |
+| 属性/指令 | `node.props[]` 统一数组 | `node.attrsMap` / `node.events` / `node.if` / `node.for` 等独立字段 |
+| v-for | 从 `node.props` 中查找 `DirectiveNode` (type=7, name='for') | `node.for` / `node.alias` / `node.iterator1` 直接字段 |
+| v-if | `NodeTypes.IF` (type=9) / `IF_BRANCH` (type=10) 独立节点类型 | `node.if` 字段 + `node.ifConditions[]` 条件分支 |
+| :key | 从 `node.props` 中查找 | `node.key` 直接字段 |
+| 事件 | `DirectiveNode` (name='on', arg=事件名) | `node.events` 对象 `{ click: { value }, input: { value } }` |
+| class | 从 `node.props` 中查找 | `node.staticClass` + `node.classBinding` 独立字段 |
 
 ## 开发
 

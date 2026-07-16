@@ -1,7 +1,7 @@
 {
-  "name": "@testid/webpack-plugin-auto-testid",
-  "version": "1.0.23",
-  "description": "Webpack 编译期 Loader — Vue SFC 模板 AST 解析，自动注入 data-testid / data-test-base-key",
+  "name": "@testid/webpack-plugin-vue2-auto-testid",
+  "version": "1.0.22",
+  "description": "Webpack 编译期 Loader — Vue 2 SFC 模板 AST 解析，自动注入 data-testid / data-test-base-key",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -18,7 +18,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/testid/testid-plugins.git",
-    "directory": "packages/webpack-plugin-auto-testid"
+    "directory": "packages/webpack-plugin-vue2-auto-testid"
   },
   "scripts": {
     "build": "tsup src/index.ts --dts --format esm,cjs --clean",
@@ -27,17 +27,14 @@
   "keywords": [
     "webpack",
     "loader",
-    "plugin",
+    "vue2",
     "testid",
     "data-testid",
-    "vue",
     "ant-design-vue",
     "element-ui",
     "e2e"
   ],
   "dependencies": {
-    "@vue/compiler-sfc": "^3.4.0",
-    "@vue/compiler-dom": "^3.4.0",
     "magic-string": "^0.30.5"
   },
   "devDependencies": {
@@ -46,6 +43,8 @@
     "typescript": "^5.3.0"
   },
   "peerDependencies": {
-    "webpack": "^5.0.0"
+    "vue": "^2.0.0",
+    "vue-template-compiler": "^2.0.0",
+    "webpack": "^4.0.0 || ^5.0.0"
   }
 }

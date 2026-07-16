@@ -105,10 +105,24 @@ export interface ParsedBaseKey {
  */
 export function parseBaseKey(baseKey: string): ParsedBaseKey | null {
   // baseKey 格式: common_comp_BaseSearch_tag_button_0
+  //
+  // 关键: tagName 使用贪婪捕获 (+)，而非非贪婪 (+?)。
+  //   非贪婪会在遇到 "menu-item_0" 时错误匹配为 tagName="m", index="0"
+  //   (因为余下 "enu-item_0" 末尾的 _0 满足 _(\d+)$)。
+  //   贪婪模式会先吞入全量再回溯，确保找到最后一个 _数字 边界。
+  //
+  // componentName 用非贪婪 (+?)，确保精确停在第一个 _tag_ 分隔符。
   const match = baseKey.match(
-    /^common_comp_(.+?)_tag_(.+?)_(\d+)$/
+    /^common_comp_(.+?)_tag_(.+)_(\d+)$/
   );
-  if (!match) return null;
+  if (!match) {
+    console.warn(
+      '[antd-testid-runtime] parseBaseKey 失败，baseKey 格式不匹配:',
+      baseKey,
+      '期望格式: common_comp_{componentName}_tag_{tagName}_{index}'
+    );
+    return null;
+  }
   return {
     componentName: match[1],
     tagName: match[2],

@@ -1,3 +1,23 @@
+var __defProp = Object.defineProperty;
+var __defProps = Object.defineProperties;
+var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
+var __getOwnPropSymbols = Object.getOwnPropertySymbols;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __propIsEnum = Object.prototype.propertyIsEnumerable;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __spreadValues = (a, b) => {
+  for (var prop in b || (b = {}))
+    if (__hasOwnProp.call(b, prop))
+      __defNormalProp(a, prop, b[prop]);
+  if (__getOwnPropSymbols)
+    for (var prop of __getOwnPropSymbols(b)) {
+      if (__propIsEnum.call(b, prop))
+        __defNormalProp(a, prop, b[prop]);
+    }
+  return a;
+};
+var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
+
 // src/adapters/antd.ts
 var popupClassSuffixMap = {
   modal: [["-modal"]],
@@ -10,9 +30,11 @@ var popupClassSuffixMap = {
     // Ant Design Vue 1.x
   ],
   popconfirm: [["-popover", "-popconfirm"]],
+  popover: [["-popover"]],
   dropdown: [["-dropdown"]],
   tooltip: [["-tooltip"]],
-  message: [["-message"]]
+  message: [["-message"]],
+  submenu: [["-menu-submenu-popup"]]
 };
 var antdAdapter = {
   name: "ant-design-vue",
@@ -30,7 +52,14 @@ var antdAdapter = {
     "a-textarea",
     "a-checkbox",
     "a-radio",
-    "a-switch"
+    "a-switch",
+    "a-menu-item",
+    "a-dropdown-button",
+    "a-tabs-tab-pane",
+    "a-table",
+    "a-tag",
+    "a-card",
+    "a-collapse-panel"
   ],
   tagPrefixPattern: /^a-/
 };
@@ -48,9 +77,11 @@ var defaultConfig = {
     select: "select_",
     datePicker: "datePicker_",
     popconfirm: "popconfirm_",
+    popover: "popover_",
     dropdown: "dropdown_",
     tooltip: "tooltip_",
-    message: "message_"
+    message: "message_",
+    submenu: "submenu_"
   },
   ignoreTags: ["script", "style", "svg", "br", "iframe"],
   ignoreClass: ["no-test-mark", "hidden"],
@@ -60,18 +91,13 @@ var defaultConfig = {
 };
 function mergeConfig(userConfig) {
   if (!userConfig) {
-    const cfg = { ...defaultConfig };
+    const cfg = __spreadValues({}, defaultConfig);
     return applyGlobalPrefix(cfg);
   }
-  const merged = {
-    ...defaultConfig,
-    ...userConfig,
+  const merged = __spreadProps(__spreadValues(__spreadValues({}, defaultConfig), userConfig), {
     // popupPrefixMap 需要深度合并: 允许用户只覆盖部分浮层前缀
-    popupPrefixMap: {
-      ...defaultConfig.popupPrefixMap,
-      ...userConfig.popupPrefixMap || {}
-    }
-  };
+    popupPrefixMap: __spreadValues(__spreadValues({}, defaultConfig.popupPrefixMap), userConfig.popupPrefixMap || {})
+  });
   return applyGlobalPrefix(merged);
 }
 function applyGlobalPrefix(cfg) {
@@ -79,17 +105,16 @@ function applyGlobalPrefix(cfg) {
   if (!g) return cfg;
   const prefix = `${g}_`;
   const prepend = (val) => val.startsWith(prefix) ? val : `${prefix}${val}`;
-  return {
-    ...cfg,
+  return __spreadProps(__spreadValues({}, cfg), {
     compilePrefix: prepend(cfg.compilePrefix),
     runtimePagePrefix: prepend(cfg.runtimePagePrefix),
     // 注意: popupPrefixMap 不拼接 globalPrefix
     // 浮层 testid 格式为 ${runtimePagePrefix}${popupPrefixMap[type]}...，
     // runtimePagePrefix 已携带 globalPrefix，避免重复
-    popupPrefixMap: { ...cfg.popupPrefixMap }
-  };
+    popupPrefixMap: __spreadValues({}, cfg.popupPrefixMap)
+  });
 }
-var globalConfig = { ...defaultConfig };
+var globalConfig = __spreadValues({}, defaultConfig);
 function initConfig(custom) {
   globalConfig = mergeConfig(custom);
 }
@@ -121,14 +146,11 @@ var popupClassSuffixMap2 = {
     ["-popconfirm"]
     // Element Popconfirm
   ],
+  popover: [["-popover"]],
   dropdown: [["-dropdown-menu"]],
-  tooltip: [
-    ["-tooltip__popper"],
-    // Element Tooltip 浮层
-    ["-popover"]
-    // Element Popover 浮层 (语义上接近 tooltip)
-  ],
-  message: [["-message"]]
+  tooltip: [["-tooltip__popper"]],
+  message: [["-message"]],
+  submenu: []
 };
 var elementAdapter = {
   name: "element-ui",
@@ -157,8 +179,9 @@ function buildAnchorKey(anchorTestId, componentName, tagName) {
   return `${anchorTestId}__${componentName}__${tagName}`;
 }
 function getNextAnchorLocalIndex(anchorTestId, componentName, tagName) {
+  var _a;
   const key = buildAnchorKey(anchorTestId, componentName, tagName);
-  const current = anchorCounterMap.get(key) ?? 0;
+  const current = (_a = anchorCounterMap.get(key)) != null ? _a : 0;
   anchorCounterMap.set(key, current + 1);
   return current;
 }
@@ -170,9 +193,16 @@ function getAnchorCounterMap() {
 }
 function parseBaseKey(baseKey) {
   const match = baseKey.match(
-    /^common_comp_(.+?)_tag_(.+?)_(\d+)$/
+    /^common_comp_(.+?)_tag_(.+)_(\d+)$/
   );
-  if (!match) return null;
+  if (!match) {
+    console.warn(
+      "[antd-testid-runtime] parseBaseKey \u5931\u8D25\uFF0CbaseKey \u683C\u5F0F\u4E0D\u5339\u914D:",
+      baseKey,
+      "\u671F\u671B\u683C\u5F0F: common_comp_{componentName}_tag_{tagName}_{index}"
+    );
+    return null;
+  }
   return {
     componentName: match[1],
     tagName: match[2],
@@ -190,9 +220,11 @@ var popupCounters = {
   select: 0,
   datePicker: 0,
   popconfirm: 0,
+  popover: 0,
   dropdown: 0,
   tooltip: 0,
-  message: 0
+  message: 0,
+  submenu: 0
 };
 function getNextPopupId(type) {
   const key = type in popupCounters ? type : "modal";
@@ -211,7 +243,7 @@ function resetPopupCounter(type) {
   }
 }
 function getPopupCounterSnapshot() {
-  return { ...popupCounters };
+  return __spreadValues({}, popupCounters);
 }
 function buildPopupTestId(type, tag, counterId) {
   const config = getConfig();
@@ -296,7 +328,7 @@ var TestIdObserver = class {
   // 生命周期
   // ==========================================================
   /**
-   * 启动 MutationObserver
+   * 启动 MutationObserver (自动执行全量扫描兜底)
    */
   start() {
     if (this.state.isRunning) return;
@@ -311,12 +343,14 @@ var TestIdObserver = class {
       // 监听所有后代节点
     });
     this.state.isRunning = true;
+    this.fullScan();
   }
   /**
    * 停止 Observer
    */
   stop() {
-    this.state.observer?.disconnect();
+    var _a;
+    (_a = this.state.observer) == null ? void 0 : _a.disconnect();
     this.state.observer = null;
     this.state.isRunning = false;
   }
@@ -376,7 +410,8 @@ var TestIdObserver = class {
    */
   processSingleNode(node) {
     const config = getConfig();
-    if (node.hasAttribute("data-testid")) return;
+    const existingTestId = node.getAttribute("data-testid");
+    if (existingTestId) return;
     if (this.shouldIgnore(node, config)) return;
     const baseKey = node.getAttribute("data-test-base-key");
     if (baseKey) {
@@ -540,11 +575,12 @@ var TestIdObserver = class {
    * ID 格式: ${runtimePagePrefix}${route}_${tag}_${counter}
    */
   handleDynamicNode(node, config) {
+    var _a;
     if (config.onlyInteractive && !this.isInteractive(node)) return;
     const tag = this.getSimpleTag(node);
     const route = this.state.currentRoute || "unknown";
     const key = `${route}_${tag}`;
-    const current = this.state.dynamicCounter.get(key) ?? 0;
+    const current = (_a = this.state.dynamicCounter.get(key)) != null ? _a : 0;
     this.state.dynamicCounter.set(key, current + 1);
     const testId = `${config.runtimePagePrefix}${route}_${tag}_${current}`;
     node.setAttribute("data-testid", testId);
@@ -561,10 +597,11 @@ var TestIdObserver = class {
    * 浮层子元素均为运行时注入，统一使用 runtimePagePrefix 前缀。
    */
   handlePopupChildNode(node, popupType, config) {
+    var _a;
     if (config.onlyInteractive && !this.isInteractive(node)) return;
     const tag = this.getSimpleTag(node);
     const key = `${popupType}_${tag}`;
-    const current = this.state.popupChildCounter.get(key) ?? 0;
+    const current = (_a = this.state.popupChildCounter.get(key)) != null ? _a : 0;
     this.state.popupChildCounter.set(key, current + 1);
     const popupPrefix = config.popupPrefixMap[popupType] || `${popupType}_`;
     const testId = `${config.runtimePagePrefix}${popupPrefix}${tag}_${current}`;
@@ -603,6 +640,7 @@ var TestIdObserver = class {
    *   - onclick 属性
    *   - role="button" / role="checkbox" / role="radio" / role="switch"
    *   - tabindex 属性
+   *   - CSS class 匹配 UI 库交互组件 (如 ant-menu-item → 渲染为 <li>，tag 不匹配组件名)
    */
   isInteractive(node) {
     const tag = node.tagName.toLowerCase();
@@ -613,6 +651,15 @@ var TestIdObserver = class {
       return true;
     }
     if (node.hasAttribute("tabindex")) return true;
+    const classStr = node.className;
+    if (typeof classStr === "string") {
+      if (/\bant-(?:menu-item|menu-submenu|dropdown-menu-item|select-item|tabs-tab|picker-cell|breadcrumb-link)\b/.test(classStr)) {
+        return true;
+      }
+      if (/\bel-(?:menu-item|dropdown-menu__item|select-dropdown__item|tabs__item)\b/.test(classStr)) {
+        return true;
+      }
+    }
     return false;
   }
   /**
@@ -641,9 +688,11 @@ var GROUP_LABELS = {
   select: "[Select \u6D6E\u5C42]",
   datePicker: "[DatePicker \u6D6E\u5C42]",
   popconfirm: "[Popconfirm \u6D6E\u5C42]",
+  popover: "[Popover \u6D6E\u5C42]",
   dropdown: "[Dropdown \u6D6E\u5C42]",
   tooltip: "[Tooltip \u6D6E\u5C42]",
-  message: "[Message \u6D6E\u5C42]"
+  message: "[Message \u6D6E\u5C42]",
+  submenu: "[SubMenu \u6D6E\u5C42]"
 };
 var GROUP_SUGGESTIONS = {
   custom: "\u4E1A\u52A1\u4EE3\u7801\u4E2D\u5B58\u5728\u624B\u5199\u56FA\u5B9A\u91CD\u590D data-testid\uFF0C\u8BF7\u68C0\u67E5\u76F8\u5173\u6A21\u677F\u4EE3\u7801",
@@ -654,9 +703,11 @@ var GROUP_SUGGESTIONS = {
   select: "Select \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
   datePicker: "DatePicker \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
   popconfirm: "Popconfirm \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
+  popover: "Popover \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
   dropdown: "Dropdown \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
   tooltip: "Tooltip \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
-  message: "Message \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548"
+  message: "Message \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548",
+  submenu: "SubMenu \u72EC\u7ACB\u8BA1\u6570\u5668\u81EA\u589E\u903B\u8F91\u5931\u6548"
 };
 var TestIdChecker = class {
   /**
@@ -752,9 +803,11 @@ var TestIdChecker = class {
       "select",
       "datePicker",
       "popconfirm",
+      "popover",
       "dropdown",
       "tooltip",
-      "message"
+      "message",
+      "submenu"
     ];
     for (const type of popupTypes) {
       if (prefix === `${type}_`) return type;
@@ -790,9 +843,53 @@ var TestIdChecker = class {
     console.groupEnd();
   }
 };
+
+// src/utils/testIdVuePlugin.ts
+var WATCHED_ATTRS = ["data-testid", "data-test-base-key"];
+var TestIdVuePlugin = {
+  install(app) {
+    app.mixin({
+      mounted() {
+        const el = this.$el;
+        if (!el) return;
+        const attrs = this.$attrs || {};
+        if (!attrs || typeof attrs !== "object") return;
+        for (const attr of WATCHED_ATTRS) {
+          const value = attrs[attr];
+          if (value != null && !el.hasAttribute(attr)) {
+            el.setAttribute(attr, String(value));
+          }
+        }
+      }
+    });
+  }
+};
+
+// src/utils/testIdVue2Plugin.ts
+var WATCHED_ATTRS2 = ["data-testid", "data-test-base-key"];
+var TestIdVue2Plugin = {
+  install(_Vue) {
+    _Vue.mixin({
+      mounted() {
+        const el = this.$el;
+        if (!el) return;
+        const attrs = this.$attrs || {};
+        if (!attrs || typeof attrs !== "object") return;
+        for (const attr of WATCHED_ATTRS2) {
+          const value = attrs[attr];
+          if (value != null && !el.hasAttribute(attr)) {
+            el.setAttribute(attr, String(value));
+          }
+        }
+      }
+    });
+  }
+};
 export {
   TestIdChecker,
   TestIdObserver,
+  TestIdVue2Plugin,
+  TestIdVuePlugin,
   antdAdapter,
   buildAnchorTestId,
   buildPopupTestId,
